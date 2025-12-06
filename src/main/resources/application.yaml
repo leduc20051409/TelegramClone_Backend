@@ -1,0 +1,23 @@
+spring:
+  application:
+    name: Telegram Clone
+
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/telegram_clone_db}
+    username: ${SPRING_DATASOURCE_USERNAME:postgres}
+    password: ${SPRING_DATASOURCE_PASSWORD:leanhduc220617}
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+
+jwt:
+  secretKey: ${JWT_SECRET:7046fcf99e782ce425f143d6b1244ae3c6ccb0a1cbf5625b165090952922b80d}
+  accessTokenExpirationMs: ${JWT_ACCESS_EXPIRATION:900000}     # 15 minutes
+  refreshTokenExpirationMs: ${JWT_REFRESH_EXPIRATION:604800000} # 7 days
+
