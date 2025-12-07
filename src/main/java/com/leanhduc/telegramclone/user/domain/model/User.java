@@ -1,5 +1,6 @@
 package com.leanhduc.telegramclone.user.domain.model;
 
+import com.leanhduc.telegramclone.user.domain.enums.RoleUser;
 import lombok.*;
 
 import java.util.UUID;

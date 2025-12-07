@@ -1,6 +1,6 @@
 package com.leanhduc.telegramclone.user.infrastructure.persistence.entity;
 
-import com.leanhduc.telegramclone.user.domain.model.RoleUser;
+import com.leanhduc.telegramclone.user.domain.enums.RoleUser;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.GenericGenerator;
