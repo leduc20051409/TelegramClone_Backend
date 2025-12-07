@@ -1,4 +1,4 @@
-package com.leanhduc.telegramclone.user.infrastructure.persistence.jpa;
+package com.leanhduc.telegramclone.user.infrastructure.persistence.repository;
 
 import com.leanhduc.telegramclone.user.infrastructure.persistence.entity.UserEntity;
 import org.springframework.data.jpa.repository.JpaRepository;

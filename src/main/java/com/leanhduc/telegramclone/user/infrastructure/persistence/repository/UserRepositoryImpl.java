@@ -1,9 +1,7 @@
 package com.leanhduc.telegramclone.user.infrastructure.persistence.repository;
 
-import com.leanhduc.telegramclone.shared.domain.exception.ResourceNotFoundException;
 import com.leanhduc.telegramclone.user.domain.model.User;
 import com.leanhduc.telegramclone.user.domain.repository.UserRepository;
-import com.leanhduc.telegramclone.user.infrastructure.persistence.jpa.UserJpaRepository;
 import com.leanhduc.telegramclone.user.infrastructure.persistence.mapper.UserEntityMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
