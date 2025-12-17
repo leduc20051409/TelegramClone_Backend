@@ -43,7 +43,7 @@ public class UserEntity {
     private String bio;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, columnDefinition = "VARCHAR(20) DEFAULT 'USER'")
+    @Column(nullable = false, length = 20)
     private RoleUser role;
 
     private OffsetDateTime createdAt;
