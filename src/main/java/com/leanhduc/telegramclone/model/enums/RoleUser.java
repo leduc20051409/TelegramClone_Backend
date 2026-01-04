@@ -1,4 +1,4 @@
-package com.leanhduc.telegramclone.user.domain.enums;
+package com.leanhduc.telegramclone.model.enums;
 
 /**
  * Enum representing user roles in the Telegram Clone application.

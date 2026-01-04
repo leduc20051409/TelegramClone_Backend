@@ -1,6 +1,6 @@
-package com.leanhduc.telegramclone.user.infrastructure.persistence.entity;
+package com.leanhduc.telegramclone.model;
 
-import com.leanhduc.telegramclone.user.domain.enums.RoleUser;
+import com.leanhduc.telegramclone.model.enums.RoleUser;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.GenericGenerator;
@@ -19,7 +19,7 @@ import java.util.UUID;
                 @UniqueConstraint(columnNames = "email"),
                 @UniqueConstraint(columnNames = "phone")
         })
-public class UserEntity {
+public class User {
 
     @Id
     @GeneratedValue(generator = "uuid2")
