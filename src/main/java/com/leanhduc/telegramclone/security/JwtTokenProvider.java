@@ -18,52 +18,28 @@ import java.util.UUID;
 @Component
 public class JwtTokenProvider {
 
-    private static final String TOKEN_TYPE_ACCESS = "access";
-    private static final String TOKEN_TYPE_REFRESH = "refresh";
-    private static final String CLAIM_TOKEN_TYPE = "type";
-
     @Value("${jwt.secretKey}")
     private String secretKey;
 
     @Value("${jwt.accessTokenExpirationMs}")
     private long accessTokenExpiration;
 
-    @Value("${jwt.refreshTokenExpirationMs}")
-    private long refreshTokenExpiration;
-
     private SecretKey getSigningKey() {
         return Keys.hmacShaKeyFor(secretKey.getBytes(StandardCharsets.UTF_8));
     }
-
 
     public String generateAccessToken(UUID userId, String email, String authorities) {
         Map<String, Object> claims = new HashMap<>();
         claims.put("userId", userId.toString());
         claims.put("email", email);
         claims.put("authorization", authorities);
-        claims.put(CLAIM_TOKEN_TYPE, TOKEN_TYPE_ACCESS);
+
         return Jwts.builder()
                 .claims(claims)
                 .subject(userId.toString())
                 .issuedAt(Date.from(Instant.now()))
                 .expiration(Date.from(Instant.now().plusMillis(accessTokenExpiration)))
-                .signWith(getSigningKey(),SignatureAlgorithm.HS256)
-                .compact();
-
-    }
-
-    public String generateRefreshToken(UUID userId,String email) {
-        Map<String, Object> claims = new HashMap<>();
-        claims.put("userId", userId.toString());
-        claims.put("email", email);
-        claims.put(CLAIM_TOKEN_TYPE, TOKEN_TYPE_REFRESH);
-        claims.put("tokenId", UUID.randomUUID().toString());
-        return Jwts.builder()
-                .claims(claims)
-                .subject(userId.toString())
-                .issuedAt(Date.from(Instant.now()))
-                .expiration(Date.from(Instant.now().plusMillis(refreshTokenExpiration)))
-                .signWith(getSigningKey(),SignatureAlgorithm.HS256)
+                .signWith(getSigningKey(), SignatureAlgorithm.HS256)
                 .compact();
     }
 
@@ -80,8 +56,8 @@ public class JwtTokenProvider {
         return UUID.fromString(subject);
     }
 
-    public String getTokenType(String token) {
-        return extractAllClaims(token).get(CLAIM_TOKEN_TYPE, String.class);
+    public String getEmail(String token) {
+        return extractAllClaims(token).get("email", String.class);
     }
 
     public String getAuthorities(String token) {
@@ -89,7 +65,7 @@ public class JwtTokenProvider {
     }
 
     public boolean validateToken(String token) {
-        if(token.startsWith("Bearer ")) {
+        if (token.startsWith("Bearer ")) {
             token = token.substring(7);
         }
         try {
@@ -112,5 +88,3 @@ public class JwtTokenProvider {
         return false;
     }
 }
-
-

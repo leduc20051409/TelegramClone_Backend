@@ -28,15 +28,14 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         try {
             String jwt = getJwtFromRequest(request);
             if (StringUtils.hasText(jwt) && jwtTokenProvider.validateToken(jwt)) {
-                String tokenType = jwtTokenProvider.getTokenType(jwt);
-                if ("access".equals(tokenType)) {
-                    UUID userId = jwtTokenProvider.getUserIdFromToken(jwt);
-                    String authorities = jwtTokenProvider.getAuthorities(jwt);
 
-                    List<GrantedAuthority> auth = AuthorityUtils.commaSeparatedStringToAuthorityList(authorities);
-                    Authentication authentication = new UsernamePasswordAuthenticationToken(userId, null, auth);
-                    SecurityContextHolder.getContext().setAuthentication(authentication);
-                }
+                UUID userId = jwtTokenProvider.getUserIdFromToken(jwt);
+                String authorities = jwtTokenProvider.getAuthorities(jwt);
+
+                List<GrantedAuthority> auth = AuthorityUtils.commaSeparatedStringToAuthorityList(authorities);
+                Authentication authentication = new UsernamePasswordAuthenticationToken(userId, null, auth);
+                SecurityContextHolder.getContext().setAuthentication(authentication);
+
             }
 
         } catch (Exception e) {
