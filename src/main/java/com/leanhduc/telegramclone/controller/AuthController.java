@@ -8,11 +8,15 @@ import com.leanhduc.telegramclone.model.User;
 import com.leanhduc.telegramclone.security.JwtTokenProvider;
 import com.leanhduc.telegramclone.service.Auth.IAuthService;
 import com.leanhduc.telegramclone.service.RefreshToken.IRefreshTokenService;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import jakarta.validation.Valid;
+
+import static com.leanhduc.telegramclone.utils.CookieUtil.*;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -23,20 +27,31 @@ public class AuthController {
     private final JwtTokenProvider jwtTokenProvider;
 
     @PostMapping("/register")
-    public ResponseEntity<AuthResponse> register(@Valid @RequestBody RegisterRequest request) {
-        return ResponseEntity.ok(authService.register(request));
+    public ResponseEntity<AuthResponse> register(
+            @Valid @RequestBody RegisterRequest request,
+            HttpServletResponse response) {
+        AuthResponse authResponse = authService.register(request);
+        setRefreshTokenCookie(response, authResponse.getRefreshToken());
+        authResponse.setRefreshToken(null);
+        return ResponseEntity.ok(authResponse);
     }
 
     @PostMapping("/login")
-    public ResponseEntity<AuthResponse> login(@Valid @RequestBody LoginRequest request) {
-        return ResponseEntity.ok(authService.login(request));
+    public ResponseEntity<AuthResponse> login(
+            @Valid @RequestBody LoginRequest request,
+            HttpServletResponse response) {
+        AuthResponse authResponse = authService.login(request);
+        setRefreshTokenCookie(response, authResponse.getRefreshToken());
+        authResponse.setRefreshToken(null);
+        return ResponseEntity.ok(authResponse);
     }
 
     @PostMapping("/refresh")
-    public ResponseEntity<AuthResponse> refreshToken(@RequestHeader("Authorization") String authHeader) {
-        String refreshToken = authHeader.startsWith("Bearer ")
-                ? authHeader.substring(7)
-                : authHeader;
+    public ResponseEntity<AuthResponse> refreshToken(
+            HttpServletRequest request,
+            HttpServletResponse response) {
+        String refreshToken = getRefreshTokenFromCookie(request);
+
         User user = refreshTokenService.verifyRefreshToken(refreshToken);
 
         String newAccessToken = jwtTokenProvider.generateAccessToken(
@@ -47,28 +62,36 @@ public class AuthController {
 
         RefreshTokenResponse newRefreshData = refreshTokenService.rotateRefreshToken(refreshToken);
 
-        AuthResponse response = new AuthResponse();
-        response.setAccessToken(newAccessToken);
-        response.setRefreshToken(newRefreshData.token());
-        response.setUserId(user.getId().toString());
-        response.setEmail(user.getEmail());
+        setRefreshTokenCookie(response, newRefreshData.token());
 
-        return ResponseEntity.ok(response);
+        AuthResponse authResponse = new AuthResponse();
+        authResponse.setAccessToken(newAccessToken);
+        authResponse.setRefreshToken(null);
+        authResponse.setUserId(user.getId().toString());
+        authResponse.setEmail(user.getEmail());
+
+        return ResponseEntity.ok(authResponse);
     }
 
-    @PostMapping("/logout")
-    public ResponseEntity<Void> logout(@RequestHeader("Authorization") String authHeader) {
-        String refreshToken = authHeader.startsWith("Bearer ")
-                ? authHeader.substring(7)
-                : authHeader;
 
+    @PostMapping("/logout")
+    public ResponseEntity<Void> logout(
+            HttpServletRequest request,
+            HttpServletResponse response) {
+        String refreshToken = getRefreshTokenFromCookie(request);
         refreshTokenService.revokeRefreshToken(refreshToken);
+        clearRefreshTokenCookie(response);
+
         return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/logout-all")
-    public ResponseEntity<Void> logoutAll(@RequestHeader("X-User-Email") String email) {
+    public ResponseEntity<Void> logoutAll(
+            @RequestHeader("X-User-Email") String email,
+            HttpServletResponse response) {
         refreshTokenService.revokeAllTokensByUser(email);
+        clearRefreshTokenCookie(response);
+
         return ResponseEntity.noContent().build();
     }
 }
