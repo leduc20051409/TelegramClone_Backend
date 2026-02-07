@@ -1,10 +1,10 @@
 package com.leanhduc.telegramclone.service.Auth;
 
+import com.leanhduc.telegramclone.config.CustomUserDetails;
 import com.leanhduc.telegramclone.dto.auth.AuthResponse;
 import com.leanhduc.telegramclone.dto.auth.LoginRequest;
 import com.leanhduc.telegramclone.dto.auth.RefreshTokenResponse;
 import com.leanhduc.telegramclone.dto.auth.RegisterRequest;
-import com.leanhduc.telegramclone.exception.UnauthorizedException;
 import com.leanhduc.telegramclone.mapper.UserMapper;
 import com.leanhduc.telegramclone.model.User;
 import com.leanhduc.telegramclone.repository.UserRepository;
@@ -12,6 +12,9 @@ import com.leanhduc.telegramclone.security.JwtTokenProvider;
 import com.leanhduc.telegramclone.service.RefreshToken.IRefreshTokenService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import com.leanhduc.telegramclone.exception.BadRequestException;
@@ -24,6 +27,7 @@ public class AuthService implements IAuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider jwtTokenProvider;
     private final IRefreshTokenService refreshTokenService;
+    private final AuthenticationManager authenticationManager;
     private final UserMapper userMapper;
 
     @Override
@@ -45,13 +49,28 @@ public class AuthService implements IAuthService {
 
     @Override
     public AuthResponse login(LoginRequest loginRequest) {
-        User user = userRepository.findByEmail(loginRequest.getEmail())
-                .orElseThrow(() -> new UnauthorizedException("Invalid email or password"));
-        if (!passwordEncoder.matches(loginRequest.getPassword(), user.getPasswordHash())) {
-            throw new UnauthorizedException("Invalid email or password");
-        }
-        log.info("User logged in successfully: {}", user.getEmail());
+        Authentication authentication =
+                authenticationManager.authenticate(
+                        new UsernamePasswordAuthenticationToken(
+                                loginRequest.getEmail(),
+                                loginRequest.getPassword()
+                        )
+                );
+
+        CustomUserDetails userDetails =
+                (CustomUserDetails) authentication.getPrincipal();
+
+        User user = userDetails.getUser();
+
         return buildAuthResponse(user);
+
+//        User user = userRepository.findByEmail(loginRequest.getEmail())
+//                .orElseThrow(() -> new UnauthorizedException("Invalid email or password"));
+//        if (!passwordEncoder.matches(loginRequest.getPassword(), user.getPasswordHash())) {
+//            throw new UnauthorizedException("Invalid email or password");
+//        }
+//        log.info("User logged in successfully: {}", user.getEmail());
+//        return buildAuthResponse(user);
     }
 
     private AuthResponse buildAuthResponse(User user) {
