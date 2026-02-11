@@ -2,6 +2,7 @@ package com.leanhduc.telegramclone.mapper;
 
 import com.leanhduc.telegramclone.dto.auth.RegisterRequest;
 import com.leanhduc.telegramclone.dto.user.UserDto;
+import com.leanhduc.telegramclone.dto.user.UserSummaryDto;
 import com.leanhduc.telegramclone.model.User;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
@@ -21,4 +22,7 @@ public interface UserMapper {
 
 
     UserDto toDto(User user);
+
+    @Mapping(target = "avatarUrl", ignore = true)
+    UserSummaryDto toSummaryDto(User user);
 }
