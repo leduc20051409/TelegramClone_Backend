@@ -19,6 +19,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import com.leanhduc.telegramclone.exception.BadRequestException;
 
+import java.util.UUID;
+
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -73,6 +75,28 @@ public class AuthService implements IAuthService {
 //        return buildAuthResponse(user);
     }
 
+    @Override
+    public AuthResponse refreshAccessToken(String oldRefreshToken) {
+
+        RefreshTokenResponse rotationResult =
+                refreshTokenService.rotateRefreshToken(oldRefreshToken);
+
+        String accessToken = jwtTokenProvider.generateAccessToken(
+                UUID.fromString(rotationResult.userId()),
+                rotationResult.email(),
+                rotationResult.role()
+        );
+
+        log.info("Access token refreshed for user: {}", rotationResult.email());
+
+        AuthResponse response = new AuthResponse();
+        response.setAccessToken(accessToken);
+        response.setRefreshToken(rotationResult.token());
+        response.setUserId(rotationResult.userId());
+        response.setEmail(rotationResult.email());
+        return response;
+    }
+
     private AuthResponse buildAuthResponse(User user) {
         String accessToken = jwtTokenProvider.generateAccessToken(
                 user.getId(),
@@ -89,4 +113,6 @@ public class AuthService implements IAuthService {
 
         return response;
     }
+
+
 }
