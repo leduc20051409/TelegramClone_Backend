@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.Comparator;
 import java.util.UUID;
 
 @Slf4j
@@ -33,6 +34,8 @@ public class RefreshTokenService implements IRefreshTokenService {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new UnauthorizedException("User not found"));
 
+        cleanupOldTokensForUser(user);
+
         String token = UUID.randomUUID().toString();
 
         RefreshToken refreshToken = new RefreshToken();
@@ -48,17 +51,29 @@ public class RefreshTokenService implements IRefreshTokenService {
         return refreshTokenMapper.toResponse(savedToken);
     }
 
+    private void cleanupOldTokensForUser(User user) {
+        var activeTokens = refreshTokenRepository.findValidTokensByUser(user, Instant.now());
+
+        if (activeTokens.size() >= 3) {
+            activeTokens.sort(Comparator.comparing(RefreshToken::getCreatedAt));
+            for (int i = 0; i < activeTokens.size() - 2; i++) {
+                RefreshToken oldToken = activeTokens.get(i);
+                oldToken.setRevoked(true);
+                refreshTokenRepository.save(oldToken);
+            }
+        }
+    }
+
     @Override
     @Transactional(readOnly = true)
     public User verifyRefreshToken(String token) {
+        if (token == null || token.isBlank()) {
+            throw new UnauthorizedException("Refresh token is required");
+        }
         RefreshToken refreshToken = refreshTokenRepository.findById(token)
                 .orElseThrow(() -> new UnauthorizedException("Invalid refresh token"));
 
         if (!refreshToken.isValid()) {
-            if (!refreshToken.isRevoked()) {
-                refreshToken.setRevoked(true);
-                refreshTokenRepository.save(refreshToken);
-            }
             throw new UnauthorizedException("Refresh token is expired or revoked");
         }
 
@@ -77,29 +92,17 @@ public class RefreshTokenService implements IRefreshTokenService {
     }
 
     @Override
-    public void revokeAllTokensByUser(String email) {
-        refreshTokenRepository.revokeAllByUserEmail(email);
-        log.info("Revoked all tokens for user: {}", email);
+    public void revokeAllTokensByUser(UUID userId) {
+        refreshTokenRepository.revokeAllByUserId(userId);
+        log.info("Revoked all tokens for user: {}", userId);
     }
 
     @Override
     @Transactional
     public RefreshTokenResponse rotateRefreshToken(String oldToken) {
-        RefreshToken oldRefreshToken = refreshTokenRepository.findById(oldToken)
-                .orElseThrow(() -> new UnauthorizedException("Invalid refresh token"));
-
-        if (!oldRefreshToken.isValid()) {
-            throw new UnauthorizedException("Refresh token is expired or revoked");
-        }
-
-        // Revoke old token
-        oldRefreshToken.setRevoked(true);
-        refreshTokenRepository.save(oldRefreshToken);
-
-        // Create new token
-        String email = oldRefreshToken.getUser().getEmail();
-        log.info("Rotating refresh token for user: {}", email);
-        return createRefreshToken(email);
+        User user = verifyRefreshToken(oldToken);
+        revokeRefreshToken(oldToken);
+        return createRefreshToken(user.getEmail());
     }
 
     @Override

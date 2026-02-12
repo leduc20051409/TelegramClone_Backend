@@ -3,6 +3,8 @@ package com.leanhduc.telegramclone.service.RefreshToken;
 import com.leanhduc.telegramclone.dto.auth.RefreshTokenResponse;
 import com.leanhduc.telegramclone.model.User;
 
+import java.util.UUID;
+
 public interface IRefreshTokenService {
     RefreshTokenResponse createRefreshToken(String email);
 
@@ -10,7 +12,7 @@ public interface IRefreshTokenService {
 
     void revokeRefreshToken(String tokenString);
 
-    void revokeAllTokensByUser(String email);
+    void revokeAllTokensByUser(UUID userId);
 
     RefreshTokenResponse rotateRefreshToken(String oldTokenString);
 
