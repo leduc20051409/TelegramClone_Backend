@@ -1,8 +1,13 @@
 package com.leanhduc.telegramclone.dto.auth;
 
-import java.time.Instant;
+import lombok.Builder;
 
+import java.time.Instant;
+@Builder
 public record RefreshTokenResponse(
         String token,
-        Instant expiresAt
+        Instant expiresAt,
+        String userId,
+        String email,
+        String role
 ) {}
