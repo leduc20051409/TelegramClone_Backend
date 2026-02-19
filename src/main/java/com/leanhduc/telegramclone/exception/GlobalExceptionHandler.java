@@ -49,6 +49,22 @@ public class GlobalExceptionHandler {
         return buildErrorResponse(HttpStatus.NOT_FOUND, ex.getMessage());
     }
 
+    @ExceptionHandler(BusinessException.class)
+    public ResponseEntity<Map<String, Object>> handleBusinessException(BusinessException ex) {
+        ErrorCode errorCode = ex.getErrorCode();
+        log.warn("Business Exception: {} - {}", errorCode.name(), errorCode.getMessage());
+
+        Map<String, Object> error = new HashMap<>();
+        error.put("timestamp", LocalDateTime.now());
+        error.put("status", errorCode.getStatus().value());
+        error.put("error", errorCode.name());
+        error.put("message", errorCode.getMessage());
+
+        return ResponseEntity
+                .status(errorCode.getStatus())
+                .body(error);
+    }
+
     private ResponseEntity<Map<String, Object>> buildErrorResponse(HttpStatus status, String message) {
         Map<String, Object> error = new HashMap<>();
         error.put("timestamp", LocalDateTime.now());
