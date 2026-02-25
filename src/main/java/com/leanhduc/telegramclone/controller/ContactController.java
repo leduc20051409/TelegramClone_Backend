@@ -2,6 +2,7 @@ package com.leanhduc.telegramclone.controller;
 
 import com.leanhduc.telegramclone.dto.contact.AddContactRequest;
 import com.leanhduc.telegramclone.dto.contact.ContactResponse;
+import com.leanhduc.telegramclone.dto.contact.UpdateContactRequest;
 import com.leanhduc.telegramclone.service.contact.IContactService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -35,5 +36,35 @@ public class ContactController {
         String userIdFromToken = principal.getName();
         UUID ownerId = UUID.fromString(userIdFromToken);
         return ResponseEntity.ok(contactService.getContacts(ownerId, pageable));
+    }
+
+    @GetMapping("/{contactId}")
+    public ResponseEntity<ContactResponse> getContact(
+            Principal principal,
+            @PathVariable UUID contactId) {
+        UUID ownerId = UUID.fromString(principal.getName());
+        ContactResponse response = contactService.getContact(ownerId, contactId);
+        return ResponseEntity.ok(response);
+    }
+
+    @PatchMapping("/{contactId}")
+    public ResponseEntity<Void> updateStatus(
+            Principal principal,
+            @PathVariable UUID contactId,
+            @RequestBody UpdateContactRequest request) {
+
+        UUID ownerId = UUID.fromString(principal.getName());
+        contactService.updateContactStatus(ownerId, contactId, request);
+        return ResponseEntity.ok().build();
+    }
+
+    @DeleteMapping("/{contactId}")
+    public ResponseEntity<Void> deleteContact(
+            Principal principal,
+            @PathVariable UUID contactId) {
+
+        UUID ownerId = UUID.fromString(principal.getName());
+        contactService.deleteContact(ownerId, contactId);
+        return ResponseEntity.noContent().build();
     }
 }
