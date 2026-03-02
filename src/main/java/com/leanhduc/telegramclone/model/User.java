@@ -4,6 +4,8 @@ import com.leanhduc.telegramclone.model.enums.RoleUser;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.GenericGenerator;
+
+import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
@@ -48,6 +50,7 @@ public class User {
 
     private OffsetDateTime createdAt;
     private OffsetDateTime updatedAt;
+    private Instant lastSeen;
 
     @PrePersist
     void prePersist() {
