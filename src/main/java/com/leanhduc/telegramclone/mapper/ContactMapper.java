@@ -10,6 +10,7 @@ import org.mapstruct.Mapping;
 public interface ContactMapper {
 
     @Mapping(source = "contact.id", target = "contactId")
+    @Mapping(source = "contact.id", target = "userId")
     @Mapping(source = "contact.username", target = "username")
     @Mapping(source = "contact.displayName", target = "displayName")
     @Mapping(source = "createdAt", target = "addedAt")

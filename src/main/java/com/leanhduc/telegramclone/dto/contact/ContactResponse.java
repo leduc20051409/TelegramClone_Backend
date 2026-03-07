@@ -5,6 +5,7 @@ import java.util.UUID;
 
 public record ContactResponse(
         UUID contactId,
+        UUID userId,
         String username,
         String displayName,
         String alias,
