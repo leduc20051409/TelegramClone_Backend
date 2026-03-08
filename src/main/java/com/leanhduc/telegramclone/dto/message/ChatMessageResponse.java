@@ -7,7 +7,7 @@ public record ChatMessageResponse(
         Long id,
         UUID conversationId,
         UUID senderId,
-        String body,
+        String message,
         Instant createdAt
 ) {
 }

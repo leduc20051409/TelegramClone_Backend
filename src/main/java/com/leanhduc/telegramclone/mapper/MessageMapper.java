@@ -10,5 +10,6 @@ import org.mapstruct.MappingConstants;
 public interface MessageMapper {
     @Mapping(source = "conversation.id", target = "conversationId")
     @Mapping(source = "sender.id", target = "senderId")
+    @Mapping(source = "body", target = "message")
     ChatMessageResponse toResponse(Message message);
 }
