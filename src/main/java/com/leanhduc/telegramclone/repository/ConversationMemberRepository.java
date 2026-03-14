@@ -11,9 +11,7 @@ import java.util.UUID;
 @Repository
 public interface ConversationMemberRepository extends JpaRepository<ConversationMember, ConversationMemberId> {
 
-    // Lấy tất cả thành viên của một phòng chat cụ thể
     List<ConversationMember> findByConversationId(UUID conversationId);
 
-    // Kiểm tra xem user có phải là thành viên của phòng chat không (dùng để Validate khi gửi tin nhắn)
     boolean existsByConversationIdAndUserId(UUID conversationId, UUID userId);
 }
