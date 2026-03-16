@@ -8,6 +8,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.security.Principal;
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -26,5 +27,12 @@ public class ConversationController {
         ConversationResponse response = conversationService.getOrCreatePrivateConversation(currentUserId, targetUserId);
 
         return ResponseEntity.ok(response);
+    }
+
+    @GetMapping()
+    public ResponseEntity<List<ConversationResponse>> getAllConversations(Principal principal) {
+        UUID userId = UUID.fromString(principal.getName());
+        List<ConversationResponse> conversations = conversationService.getAllConversationsByUser(userId);
+        return ResponseEntity.ok(conversations);
     }
 }

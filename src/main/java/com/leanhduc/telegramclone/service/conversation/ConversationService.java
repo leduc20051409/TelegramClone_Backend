@@ -16,7 +16,6 @@ import com.leanhduc.telegramclone.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -75,6 +74,14 @@ public class ConversationService implements IConversationService {
     public List<UUID> getConversationMemberIds(UUID conversationId) {
         return memberRepository.findByConversationId(conversationId).stream()
                 .map(member -> member.getUser().getId())
+                .toList();
+    }
+
+    @Override
+    public List<ConversationResponse> getAllConversationsByUser(UUID userId) {
+        List<Conversation> conversations = conversationRepository.findAllByMember(userId);
+        return conversations.stream()
+                .map(conversationMapper::toResponse)
                 .toList();
     }
 }

@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -22,4 +23,9 @@ public interface ConversationRepository extends JpaRepository<Conversation, UUID
             @Param("user1Id") UUID user1Id,
             @Param("user2Id") UUID user2Id
     );
+
+    @Query("SELECT DISTINCT c FROM Conversation c " +
+            "JOIN ConversationMember cm ON c.id = cm.conversation.id " +
+            "WHERE cm.user.id = :userId")
+    List<Conversation> findAllByMember(@Param("userId") UUID userId);
 }
