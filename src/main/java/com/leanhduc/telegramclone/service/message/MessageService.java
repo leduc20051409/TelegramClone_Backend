@@ -2,17 +2,13 @@ package com.leanhduc.telegramclone.service.message;
 
 import com.leanhduc.telegramclone.dto.message.ChatMessageRequest;
 import com.leanhduc.telegramclone.dto.message.ChatMessageResponse;
+import com.leanhduc.telegramclone.dto.message.ChatReadRequest;
 import com.leanhduc.telegramclone.exception.BusinessException;
 import com.leanhduc.telegramclone.exception.ErrorCode;
 import com.leanhduc.telegramclone.mapper.MessageMapper;
-import com.leanhduc.telegramclone.model.Conversation;
-import com.leanhduc.telegramclone.model.Message;
-import com.leanhduc.telegramclone.model.User;
+import com.leanhduc.telegramclone.model.*;
 import com.leanhduc.telegramclone.model.enums.MessageType;
-import com.leanhduc.telegramclone.repository.ConversationMemberRepository;
-import com.leanhduc.telegramclone.repository.ConversationRepository;
-import com.leanhduc.telegramclone.repository.MessageRepository;
-import com.leanhduc.telegramclone.repository.UserRepository;
+import com.leanhduc.telegramclone.repository.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -30,6 +26,7 @@ public class MessageService implements IMessageService {
     private final ConversationRepository conversationRepository;
     private final ConversationMemberRepository memberRepository;
     private final UserRepository userRepository;
+    private final UnreadCounterRepository unreadCounterRepository;
     private final MessageMapper messageMapper;
 
     @Override
@@ -73,5 +70,25 @@ public class MessageService implements IMessageService {
         return messages.stream()
                 .map(messageMapper::toResponse)
                 .toList();
+    }
+
+    @Override
+    public void markMessagesAsRead(UUID currentUserId, ChatReadRequest request) {
+        if (!memberRepository.existsByConversationIdAndUserId(request.conversationId(), currentUserId)) {
+            throw new BusinessException(ErrorCode.NOT_IN_CONVERSATION);
+        }
+        Conversation conversationRef = conversationRepository.getReferenceById(request.conversationId());
+        User userRef = userRepository.getReferenceById(currentUserId);
+        UnreadCounterId counterId = new UnreadCounterId(request.conversationId(), currentUserId);
+        UnreadCounter counter = unreadCounterRepository.findById(counterId)
+                .orElse(UnreadCounter.builder()
+                        .id(counterId)
+                        .conversation(conversationRef)
+                        .user(userRef)
+                        .build());
+        if(counter.getLastReadMessageId() == null || counter.getLastReadMessageId() < request.lastReadMessageId()) {
+            counter.setLastReadMessageId(request.lastReadMessageId());
+            unreadCounterRepository.save(counter);
+        }
     }
 }

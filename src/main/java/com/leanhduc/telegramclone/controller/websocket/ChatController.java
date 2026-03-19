@@ -2,6 +2,7 @@ package com.leanhduc.telegramclone.controller.websocket;
 
 import com.leanhduc.telegramclone.dto.message.ChatMessageRequest;
 import com.leanhduc.telegramclone.dto.message.ChatMessageResponse;
+import com.leanhduc.telegramclone.dto.message.ChatReadRequest;
 import com.leanhduc.telegramclone.dto.websocket.WsEnvelope;
 import com.leanhduc.telegramclone.service.conversation.IConversationService;
 import com.leanhduc.telegramclone.service.message.IMessageService;
@@ -23,7 +24,7 @@ public class ChatController {
     private final IMessageService messageService;
     private final IConversationService conversationService;
 
-    @MessageMapping("/chat.send")
+    @MessageMapping ("/chat.send")
     public void sendMessage(@Payload ChatMessageRequest request, Principal principal) {
         UUID senderId = UUID.fromString(principal.getName());
         ChatMessageResponse savedMessage = messageService.saveMessage(senderId, request);
@@ -35,6 +36,23 @@ public class ChatController {
                     "/queue/chat",
                     envelope
             );
+        }
+    }
+
+    @MessageMapping ("/chat.read")
+    public void markAsRead(@Payload ChatReadRequest request, Principal principal) {
+        UUID readerId = UUID.fromString(principal.getName());
+        messageService.markMessagesAsRead(readerId, request);
+        WsEnvelope<ChatReadRequest> envelope = WsEnvelope.of("MESSAGES_READ", request);
+        List<UUID> memberIds = conversationService.getConversationMemberIds(request.conversationId());
+        for (UUID memberId : memberIds) {
+            if (!memberId.equals(readerId)) {
+                messagingTemplate.convertAndSendToUser(
+                        memberId.toString(),
+                        "/queue/chat",
+                        envelope
+                );
+            }
         }
     }
 }
