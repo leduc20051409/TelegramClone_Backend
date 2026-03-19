@@ -18,11 +18,13 @@
   │
   ├── controller/             # Tầng nhận request (REST + WebSocket)
   │   ├── websocket/
+  │   │   ├── ChatController.java       # WebSocket chat send/read
   │   │   └── PresenceController.java   # Xử lý realtime presence (online/offline)
   │   │
   │   ├── AuthController.java           # API đăng nhập / đăng ký / refresh token
   │   ├── ContactController.java        # API quản lý danh bạ
   │   ├── ConversationController.java   # API quản lý cuộc hội thoại
+  │   ├── MessageController.java        # API lấy lịch sử tin nhắn
   │   └── UserController.java           # API quản lý thông tin user
   │
   ├── dto/                    # Data Transfer Object (Request / Response)
@@ -54,6 +56,8 @@
   │   ├── ConversationMember.java
   │   ├── ConversationMemberId.java
   │   ├── Message.java
+  │   ├── UnreadCounter.java
+  │   ├── UnreadCounterId.java
   │   ├── RefreshToken.java
   │   ├── User.java
   │   └── enums/              # Enum types
@@ -63,6 +67,7 @@
   │   ├── ConversationRepository.java
   │   ├── ConversationMemberRepository.java
   │   ├── MessageRepository.java
+  │   ├── UnreadCounterRepository.java
   │   ├── RefreshTokenRepository.java
   │   └── UserRepository.java
   │
