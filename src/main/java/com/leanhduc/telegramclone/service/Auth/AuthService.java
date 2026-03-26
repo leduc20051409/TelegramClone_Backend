@@ -5,6 +5,8 @@ import com.leanhduc.telegramclone.dto.auth.AuthResponse;
 import com.leanhduc.telegramclone.dto.auth.LoginRequest;
 import com.leanhduc.telegramclone.dto.auth.RefreshTokenResponse;
 import com.leanhduc.telegramclone.dto.auth.RegisterRequest;
+import com.leanhduc.telegramclone.exception.BusinessException;
+import com.leanhduc.telegramclone.exception.ErrorCode;
 import com.leanhduc.telegramclone.mapper.UserMapper;
 import com.leanhduc.telegramclone.model.User;
 import com.leanhduc.telegramclone.repository.UserRepository;
@@ -17,7 +19,6 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.Authentication;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
-import com.leanhduc.telegramclone.exception.BadRequestException;
 
 import java.util.UUID;
 
@@ -35,10 +36,10 @@ public class AuthService implements IAuthService {
     @Override
     public AuthResponse register(RegisterRequest registerRequest) {
         if (userRepository.existsByEmail(registerRequest.getEmail())) {
-            throw new BadRequestException("Email already exists");
+            throw new BusinessException(ErrorCode.INVALID_CREDENTIALS);
         }
         if (userRepository.existsByUsername(registerRequest.getUsername())) {
-            throw new BadRequestException("Username already exists");
+            throw new BusinessException(ErrorCode.INVALID_CREDENTIALS);
         }
         User user = userMapper.toEntity(registerRequest);
         user.setPasswordHash(passwordEncoder.encode(registerRequest.getPassword()));
