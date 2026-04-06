@@ -1,6 +1,9 @@
 package com.leanhduc.telegramclone.dto.message;
 
+import com.leanhduc.telegramclone.dto.media.MediaAttachmentDto;
+
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 public record ChatMessageResponse(
@@ -8,6 +11,7 @@ public record ChatMessageResponse(
         UUID conversationId,
         UUID senderId,
         String message,
-        Instant createdAt
+        Instant createdAt,
+        List<MediaAttachmentDto> media
 ) {
 }
