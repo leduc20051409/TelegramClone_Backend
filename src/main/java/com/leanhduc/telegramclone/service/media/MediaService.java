@@ -66,10 +66,11 @@ public class MediaService implements IMediaService {
         }
 
         try {
+            String resourceType = getResourceType(contentType);
             Map<String, Object> result = cloudinary.uploader().upload(
                     file.getBytes(),
                     ObjectUtils.asMap(
-                            "resource_type", "auto",
+                            "resource_type", resourceType,
                             "folder", "telegram-clone/" + userId
                     )
             );
@@ -83,6 +84,7 @@ public class MediaService implements IMediaService {
                     .ownerId(userId)
                     .storageKey(storageKey)
                     .url(secureUrl)
+                    .resourceType(resourceType)
                     .mimeType(contentType)
                     .fileName(originalFilename)
                     .fileSize(size)
@@ -112,6 +114,13 @@ public class MediaService implements IMediaService {
         if (!userId.equals(media.getOwnerId()) || media.getStatus() != MediaStatus.TEMP) {
             throw new BusinessException(ErrorCode.MEDIA_NOT_ACCESSIBLE);
         }
+        try {
+            cloudinary.uploader().destroy(media.getStorageKey(),
+                    ObjectUtils.asMap("resource_type", media.getResourceType()));
+        } catch (IOException e) {
+            log.error("Failed to delete media from Cloudinary: {}", mediaId, e);
+            throw new BusinessException(ErrorCode.DELETE_MEDIA_FAILED);
+        }
         mediaRepository.delete(media);
     }
 
@@ -127,5 +136,12 @@ public class MediaService implements IMediaService {
             return BigDecimal.valueOf(number.doubleValue());
         }
         return null;
+    }
+
+    private String getResourceType(String contentType) {
+        if (contentType == null) return "raw";
+        if (contentType.startsWith("image")) return "image";
+        if (contentType.startsWith("video")) return "video";
+        return "raw"; // document, pdf, docx
     }
 }

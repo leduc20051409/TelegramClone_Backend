@@ -32,6 +32,9 @@ public class Media {
 
     private String url;
 
+    @Column(name = "resource_type", length = 10, nullable = false)
+    private String resourceType;
+
     @Column(name = "mime_type")
     private String mimeType;
 

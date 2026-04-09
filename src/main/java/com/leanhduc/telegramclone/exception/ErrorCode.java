@@ -31,7 +31,8 @@ public enum ErrorCode {
     FILE_UPLOAD_FAILED("Failed to upload file", HttpStatus.INTERNAL_SERVER_ERROR),
     MEDIA_NOT_ACCESSIBLE("Media not accessible", HttpStatus.FORBIDDEN),
     DUPLICATE_MEDIA("Duplicate media in message", HttpStatus.BAD_REQUEST),
-    MEDIA_NOT_FOUND("Media not found", HttpStatus.NOT_FOUND);
+    MEDIA_NOT_FOUND("Media not found", HttpStatus.NOT_FOUND),
+    DELETE_MEDIA_FAILED("Failed to delete media", HttpStatus.INTERNAL_SERVER_ERROR);
 
     private final String message;
     private final HttpStatus status;
