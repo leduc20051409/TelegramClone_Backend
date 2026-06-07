@@ -24,6 +24,7 @@
   │   ├── AuthController.java           # API đăng nhập / đăng ký / refresh token
   │   ├── ContactController.java        # API quản lý danh bạ
   │   ├── ConversationController.java   # API quản lý cuộc hội thoại
+  │   ├── MediaController.java          # API upload/download media (file, image, video)
   │   ├── MessageController.java        # API lấy lịch sử tin nhắn
   │   └── UserController.java           # API quản lý thông tin user
   │
@@ -55,7 +56,10 @@
   │   ├── Conversation.java
   │   ├── ConversationMember.java
   │   ├── ConversationMemberId.java
+  │   ├── Media.java
   │   ├── Message.java
+  │   ├── MessageMedia.java
+  │   ├── MessageMediaId.java
   │   ├── UnreadCounter.java
   │   ├── UnreadCounterId.java
   │   ├── RefreshToken.java
@@ -77,6 +81,7 @@
   │   ├── Auth/               # Authentication & Authorization logic
   │   ├── contact/            # Contact management logic
   │   ├── conversation/       # Conversation management logic
+  │   ├── media/              # Media upload/storage logic (Cloudinary integration)
   │   ├── message/            # Message handling logic
   │   ├── Presence/           # Online/Offline presence logic
   │   ├── RefreshToken/       # Token refresh logic

@@ -8,6 +8,9 @@ public record ConversationResponse(
         UUID id,
         ConversationType type,
         String title,
-        Instant createdAt
+        Instant createdAt,
+        String lastMessage,
+        Instant lastMessageTimestamp,
+        UUID partnerId
 ) {
 }

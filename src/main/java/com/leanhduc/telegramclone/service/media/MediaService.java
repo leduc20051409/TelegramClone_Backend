@@ -71,7 +71,8 @@ public class MediaService implements IMediaService {
                     file.getBytes(),
                     ObjectUtils.asMap(
                             "resource_type", resourceType,
-                            "folder", "telegram-clone/" + userId
+                            "folder", "telegram-clone/" + userId,
+                            "public_id", originalFilename.replaceAll("\\.[^.]+$", "")
                     )
             );
             String secureUrl = (String) result.get("secure_url");

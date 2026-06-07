@@ -24,7 +24,9 @@ public interface MessageMapper {
                 base.senderId(),
                 base.message(),
                 base.createdAt(),
-                media
+                media,
+                base.edited(),
+                base.updatedAt()
         );
     }
 }

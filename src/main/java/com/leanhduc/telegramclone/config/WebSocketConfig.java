@@ -51,7 +51,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
             @Override
             public Message<?> preSend(Message<?> message, MessageChannel channel) {
                 StompHeaderAccessor accessor = MessageHeaderAccessor.getAccessor(message, StompHeaderAccessor.class);
-                if (StompCommand.CONNECT.equals(accessor.getCommand())) {
+                if (StompCommand.CONNECT.equals(accessor != null ? accessor.getCommand() : null)) {
                     String authorizationHeader = accessor.getFirstNativeHeader("Authorization");
                     if (authorizationHeader != null && authorizationHeader.startsWith("Bearer ")) {
                         String token = authorizationHeader.substring(7);
@@ -59,13 +59,20 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
                             UUID userId = jwtTokenProvider.getUserIdFromToken(token);
                             String authorities = jwtTokenProvider.getAuthorities(token);
 
-                            List<GrantedAuthority> auth = AuthorityUtils.commaSeparatedStringToAuthorityList(authorities);
-                            Authentication authentication = new UsernamePasswordAuthenticationToken(userId, null, auth);
+                            List<GrantedAuthority> auth = org.springframework.security.core.authority.AuthorityUtils.commaSeparatedStringToAuthorityList(authorities);
+                            // Use userId.toString() to ensure the principal is a String, which getName() can safely return
+                            Authentication authentication = new UsernamePasswordAuthenticationToken(userId.toString(), null, auth);
                             accessor.setUser(authentication);
+                            // Rebuild the message to ensure headers are updated
+                            return org.springframework.messaging.support.MessageBuilder.createMessage(message.getPayload(), accessor.getMessageHeaders());
                         }
                         else {
                             log.error("Invalid JWT token: {}", token);
+                            throw new IllegalArgumentException("Invalid JWT token in WebSocket connect");
                         }
+                    } else {
+                        log.error("Missing Authorization header in WebSocket connect");
+                        throw new IllegalArgumentException("Missing Authorization header");
                     }
                 }
                 return message;

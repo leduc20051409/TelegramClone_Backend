@@ -38,6 +38,13 @@ public class Message {
     @Column(nullable = false)
     private boolean deleted = false;
 
+    @Column(nullable = false)
+    @Builder.Default
+    private boolean edited = false;
+
+    @Column(name = "updated_at")
+    private Instant updatedAt;
+
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)
     private Instant createdAt;

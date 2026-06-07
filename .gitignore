@@ -37,3 +37,7 @@ build/
 .env
 .env.*
 !.env.example
+
+# Agent directories
+.agents/
+.agent/

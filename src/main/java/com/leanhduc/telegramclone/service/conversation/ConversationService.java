@@ -17,6 +17,9 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
+import com.leanhduc.telegramclone.model.Message;
+import com.leanhduc.telegramclone.repository.MessageRepository;
+import org.springframework.data.domain.PageRequest;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -27,6 +30,7 @@ public class ConversationService implements IConversationService {
     private final ConversationRepository conversationRepository;
     private final ConversationMemberRepository memberRepository;
     private final UserRepository userRepository;
+    private final MessageRepository messageRepository;
     private final ConversationMapper conversationMapper;
 
     @Override
@@ -44,7 +48,20 @@ public class ConversationService implements IConversationService {
                 .findPrivateConversationByUsers(currentUserId, targetUserId);
 
         if (existingConversation.isPresent()) {
-            return conversationMapper.toResponse(existingConversation.get());
+            Conversation conv = existingConversation.get();
+            List<Message> latestMessages = messageRepository.findByConversationIdAndDeletedFalseOrderByIdDesc(
+                    conv.getId(), PageRequest.of(0, 1)
+            );
+            Message lastMsg = latestMessages.isEmpty() ? null : latestMessages.get(0);
+            return new ConversationResponse(
+                    conv.getId(),
+                    conv.getType(),
+                    conv.getTitle(),
+                    conv.getCreatedAt(),
+                    lastMsg != null ? lastMsg.getBody() : null,
+                    lastMsg != null ? lastMsg.getCreatedAt() : null,
+                    targetUserId
+            );
         }
 
         Conversation newConversation = Conversation.builder()
@@ -66,7 +83,15 @@ public class ConversationService implements IConversationService {
                 .build();
         memberRepository.saveAll(List.of(member1, member2));
 
-        return conversationMapper.toResponse(newConversation);
+        return new ConversationResponse(
+                newConversation.getId(),
+                newConversation.getType(),
+                newConversation.getTitle(),
+                newConversation.getCreatedAt(),
+                null,
+                null,
+                targetUserId
+        );
     }
 
     @Override
@@ -81,7 +106,28 @@ public class ConversationService implements IConversationService {
     public List<ConversationResponse> getAllConversationsByUser(UUID userId) {
         List<Conversation> conversations = conversationRepository.findAllByMember(userId);
         return conversations.stream()
-                .map(conversationMapper::toResponse)
+                .map(conv -> {
+                    UUID partnerId = memberRepository.findByConversationId(conv.getId()).stream()
+                            .map(member -> member.getUser().getId())
+                            .filter(id -> !id.equals(userId))
+                            .findFirst()
+                            .orElse(null);
+
+                    List<Message> latestMessages = messageRepository.findByConversationIdAndDeletedFalseOrderByIdDesc(
+                            conv.getId(), PageRequest.of(0, 1)
+                    );
+                    Message lastMsg = latestMessages.isEmpty() ? null : latestMessages.get(0);
+
+                    return new ConversationResponse(
+                            conv.getId(),
+                            conv.getType(),
+                            conv.getTitle(),
+                            conv.getCreatedAt(),
+                            lastMsg != null ? lastMsg.getBody() : null,
+                            lastMsg != null ? lastMsg.getCreatedAt() : null,
+                            partnerId
+                    );
+                })
                 .toList();
     }
 }

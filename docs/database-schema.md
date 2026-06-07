@@ -121,6 +121,56 @@ Chat messages within a conversation.
 
 ---
 
+## Table: `media`
+
+Stores media files (images, videos, documents) with metadata.
+
+| Column            | Type      | Constraints                  | Description                                      |
+|-------------------|-----------|------------------------------|--------------------------------------------------|
+| `id`              | UUID      | PRIMARY KEY                  | Unique media identifier                          |
+| `owner_id`        | UUID      | FOREIGN KEY (users.id)       | User who uploaded the media                      |
+| `storage_key`     | VARCHAR   | NOT NULL                     | Key/path in Cloudinary storage                   |
+| `url`             | VARCHAR   | NOT NULL                     | Full URL to access the media                     |
+| `resource_type`   | VARCHAR   | NOT NULL                     | Media type: `image`, `video`, `raw` (file)       |
+| `mime_type`       | VARCHAR   |                              | MIME type (e.g., `image/png`, `video/mp4`)       |
+| `file_name`       | VARCHAR   |                              | Original file name                               |
+| `file_size`       | BIGINT    |                              | File size in bytes                               |
+| `width`           | INTEGER   |                              | Image/video width (nullable for non-visual)      |
+| `height`          | INTEGER   |                              | Image/video height (nullable for non-visual)     |
+| `duration`        | DECIMAL   |                              | Duration in seconds (for videos/audio)           |
+| `status`          | VARCHAR   | NOT NULL                     | `TEMP`, `PERSISTED` (lifecycle state)            |
+| `created_at`      | TIMESTAMP | NOT NULL                     | When media was uploaded                          |
+| `updated_at`      | TIMESTAMP | NOT NULL                     | Last update timestamp                            |
+
+**Indexes:**
+- Recommended index on `(owner_id)` for user media lookup
+- Recommended index on `(status, created_at)` for cleanup queries
+
+**Notes:**
+- `TEMP` status: Media uploaded but not yet attached to a message
+- `PERSISTED` status: Media is actively used in messages or profiles
+- Cleanup job should remove `TEMP` media after TTL (e.g., 24 hours)
+
+---
+
+## Table: `message_media`
+
+Junction table linking messages to media attachments.
+
+| Column            | Type      | Constraints                              | Description                                      |
+|-------------------|-----------|------------------------------------------|--------------------------------------------------|
+| `message_id`      | BIGINT    | NOT NULL, FOREIGN KEY (messages.id)      | Message                                          |
+| `media_id`        | UUID      | NOT NULL, FOREIGN KEY (media.id)         | Attached media                                   |
+| `ordinal`         | INTEGER   | NOT NULL                                 | Display order (1-based)                          |
+
+**Primary Key:** `(message_id, media_id)` (composite key)
+
+**Notes:**
+- A message can have multiple media attachments (ordered by `ordinal`)
+- A media file can be referenced by multiple messages (e.g., forwarded message with attachment)
+
+---
+
 ## Table: `unread_counters`
 
 Tracks last read message per user per conversation.
@@ -203,6 +253,9 @@ Stored as a string in the `message_type` column of `messages`.
 - **Many-to-Many (via join table)**: Users are members of conversations through `conversation_members`.
 - **One-to-Many**: A `Conversation` can have many `ConversationMember`s.
 - **One-to-Many**: A `User` can have many `Message`s as sender.
+- **One-to-Many**: A `User` can have many `Media` files (as owner).
+- **One-to-Many**: A `Message` can have many `MessageMedia` attachments.
+- **Many-to-Many (via join table)**: Messages are linked to media files through `message_media`.
 - **One-to-One (per conversation per user)**: `UnreadCounter` tracks the last read message for a user in a conversation.
 
 ---

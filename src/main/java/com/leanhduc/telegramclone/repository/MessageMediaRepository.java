@@ -17,4 +17,8 @@ public interface MessageMediaRepository extends JpaRepository<MessageMedia, Mess
             "WHERE mm.message.id IN :messageIds " +
             "ORDER BY mm.message.id, mm.ordinal")
     List<MessageMedia> findByMessageIdInWithMedia(@Param("messageIds") List<Long> messageIds);
+
+    @org.springframework.data.jpa.repository.Modifying
+    @Query("DELETE FROM MessageMedia mm WHERE mm.message.id = :messageId")
+    void deleteByMessageId(@Param("messageId") Long messageId);
 }

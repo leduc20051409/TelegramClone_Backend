@@ -12,6 +12,8 @@ public record ChatMessageResponse(
         UUID senderId,
         String message,
         Instant createdAt,
-        List<MediaAttachmentDto> media
+        List<MediaAttachmentDto> media,
+        boolean edited,
+        Instant updatedAt
 ) {
 }
