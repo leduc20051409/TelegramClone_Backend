@@ -59,7 +59,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
                             UUID userId = jwtTokenProvider.getUserIdFromToken(token);
                             String authorities = jwtTokenProvider.getAuthorities(token);
 
-                            List<GrantedAuthority> auth = org.springframework.security.core.authority.AuthorityUtils.commaSeparatedStringToAuthorityList(authorities);
+                            List<GrantedAuthority> auth = AuthorityUtils.commaSeparatedStringToAuthorityList(authorities);
                             // Use userId.toString() to ensure the principal is a String, which getName() can safely return
                             Authentication authentication = new UsernamePasswordAuthenticationToken(userId.toString(), null, auth);
                             accessor.setUser(authentication);

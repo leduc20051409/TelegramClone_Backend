@@ -1,6 +1,7 @@
 package com.leanhduc.telegramclone.listener;
 
 import com.leanhduc.telegramclone.service.Presence.IPresenceService;
+import com.leanhduc.telegramclone.service.typing.ITypingService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;
@@ -17,6 +18,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class WebSocketEventListener {
     private final IPresenceService presenceService;
+    private final ITypingService typingService;
 
     // 1. Xử lý khi User Connect
     @EventListener
@@ -51,6 +53,9 @@ public class WebSocketEventListener {
             // Truyền cả 2 tham số vào hàm disconnect của bạn
             presenceService.disconnect(userId, sessionId);
             log.info("User Disconnect: ID={}, Session={}", userId, sessionId);
+
+            // Xóa tất cả các trạng thái đang gõ phím của user này trong Redis
+            typingService.clearTypingForUser(userId);
         }
     }
 }
