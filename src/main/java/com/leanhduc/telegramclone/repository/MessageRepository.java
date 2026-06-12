@@ -27,4 +27,13 @@ public interface MessageRepository extends JpaRepository<Message, Long> {
             @Param("lastMessageId") Long lastMessageId,
             Pageable pageable
     );
+
+    @Query("SELECT COUNT(m) FROM Message m WHERE m.conversation.id = :conversationId " +
+            "AND m.deleted = false AND m.sender.id <> :userId " +
+            "AND (:lastReadMessageId IS NULL OR m.id > :lastReadMessageId)")
+    long countUnreadMessages(
+            @Param("conversationId") UUID conversationId,
+            @Param("userId") UUID userId,
+            @Param("lastReadMessageId") Long lastReadMessageId
+    );
 }

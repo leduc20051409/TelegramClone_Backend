@@ -28,6 +28,18 @@ public class Conversation {
 
     private String title;
 
+    private String description;
+
+    @Column(name = "avatar_media_id")
+    private UUID avatarMediaId;
+
+    @Column(name = "is_public", nullable = false)
+    @Builder.Default
+    private boolean isPublic = false;
+
+    @Column(name = "created_by")
+    private UUID createdBy;
+
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)
     private Instant createdAt;

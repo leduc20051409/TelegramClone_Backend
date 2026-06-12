@@ -1,5 +1,6 @@
 package com.leanhduc.telegramclone.controller;
 
+import com.leanhduc.telegramclone.dto.conversation.CreateGroupRequest;
 import com.leanhduc.telegramclone.dto.conversation.ConversationResponse;
 import com.leanhduc.telegramclone.service.conversation.IConversationService;
 import lombok.RequiredArgsConstructor;
@@ -25,6 +26,17 @@ public class ConversationController {
     ) {
         UUID currentUserId = UUID.fromString(principal.getName());
         ConversationResponse response = conversationService.getOrCreatePrivateConversation(currentUserId, targetUserId);
+
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/group")
+    public ResponseEntity<ConversationResponse> createGroup(
+            @RequestBody CreateGroupRequest request,
+            Principal principal
+    ) {
+        UUID currentUserId = UUID.fromString(principal.getName());
+        ConversationResponse response = conversationService.createGroupConversation(currentUserId, request);
 
         return ResponseEntity.ok(response);
     }

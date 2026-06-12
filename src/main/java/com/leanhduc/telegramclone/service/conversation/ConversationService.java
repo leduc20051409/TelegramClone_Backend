@@ -13,9 +13,14 @@ import com.leanhduc.telegramclone.model.enums.ConversationType;
 import com.leanhduc.telegramclone.repository.ConversationMemberRepository;
 import com.leanhduc.telegramclone.repository.ConversationRepository;
 import com.leanhduc.telegramclone.repository.UserRepository;
+import com.leanhduc.telegramclone.repository.UnreadCounterRepository;
+import com.leanhduc.telegramclone.model.UnreadCounterId;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.leanhduc.telegramclone.dto.conversation.CreateGroupRequest;
+import com.leanhduc.telegramclone.dto.user.UserDto;
+import com.leanhduc.telegramclone.repository.MediaRepository;
 import java.util.List;
 import com.leanhduc.telegramclone.model.Message;
 import com.leanhduc.telegramclone.repository.MessageRepository;
@@ -31,6 +36,8 @@ public class ConversationService implements IConversationService {
     private final ConversationMemberRepository memberRepository;
     private final UserRepository userRepository;
     private final MessageRepository messageRepository;
+    private final MediaRepository mediaRepository;
+    private final UnreadCounterRepository unreadCounterRepository;
     private final ConversationMapper conversationMapper;
 
     @Override
@@ -53,6 +60,24 @@ public class ConversationService implements IConversationService {
                     conv.getId(), PageRequest.of(0, 1)
             );
             Message lastMsg = latestMessages.isEmpty() ? null : latestMessages.get(0);
+            List<UserDto> participants = memberRepository.findByConversationId(conv.getId()).stream()
+                    .map(member -> {
+                        User u = member.getUser();
+                        return new UserDto(
+                                u.getId(),
+                                u.getUsername(),
+                                u.getDisplayName(),
+                                u.getEmail(),
+                                u.getBio(),
+                                u.getAvatarMediaId(),
+                                u.getRole()
+                        );
+                    })
+                    .toList();
+            Long lastReadMsgId = unreadCounterRepository.findById(new UnreadCounterId(conv.getId(), currentUserId))
+                    .map(com.leanhduc.telegramclone.model.UnreadCounter::getLastReadMessageId)
+                    .orElse(0L);
+            int unreadCount = (int) messageRepository.countUnreadMessages(conv.getId(), currentUserId, lastReadMsgId);
             return new ConversationResponse(
                     conv.getId(),
                     conv.getType(),
@@ -60,7 +85,13 @@ public class ConversationService implements IConversationService {
                     conv.getCreatedAt(),
                     lastMsg != null ? lastMsg.getBody() : null,
                     lastMsg != null ? lastMsg.getCreatedAt() : null,
-                    targetUserId
+                    targetUserId,
+                    null,
+                    null,
+                    null,
+                    participants,
+                    lastMsg != null && lastMsg.getSender() != null ? lastMsg.getSender().getId() : null,
+                    unreadCount
             );
         }
 
@@ -83,6 +114,11 @@ public class ConversationService implements IConversationService {
                 .build();
         memberRepository.saveAll(List.of(member1, member2));
 
+        List<UserDto> participants = List.of(
+                new UserDto(currentUser.getId(), currentUser.getUsername(), currentUser.getDisplayName(), currentUser.getEmail(), currentUser.getBio(), currentUser.getAvatarMediaId(), currentUser.getRole()),
+                new UserDto(targetUser.getId(), targetUser.getUsername(), targetUser.getDisplayName(), targetUser.getEmail(), targetUser.getBio(), targetUser.getAvatarMediaId(), targetUser.getRole())
+        );
+
         return new ConversationResponse(
                 newConversation.getId(),
                 newConversation.getType(),
@@ -90,7 +126,13 @@ public class ConversationService implements IConversationService {
                 newConversation.getCreatedAt(),
                 null,
                 null,
-                targetUserId
+                targetUserId,
+                null,
+                null,
+                null,
+                participants,
+                null,
+                0
         );
     }
 
@@ -103,20 +145,51 @@ public class ConversationService implements IConversationService {
     }
 
     @Override
+    @Transactional(readOnly = true)
     public List<ConversationResponse> getAllConversationsByUser(UUID userId) {
         List<Conversation> conversations = conversationRepository.findAllByMember(userId);
         return conversations.stream()
                 .map(conv -> {
-                    UUID partnerId = memberRepository.findByConversationId(conv.getId()).stream()
-                            .map(member -> member.getUser().getId())
-                            .filter(id -> !id.equals(userId))
-                            .findFirst()
-                            .orElse(null);
+                    UUID partnerId = null;
+                    if (conv.getType() == ConversationType.PRIVATE) {
+                        partnerId = memberRepository.findByConversationId(conv.getId()).stream()
+                                .map(member -> member.getUser().getId())
+                                .filter(id -> !id.equals(userId))
+                                .findFirst()
+                                .orElse(null);
+                    }
 
                     List<Message> latestMessages = messageRepository.findByConversationIdAndDeletedFalseOrderByIdDesc(
                             conv.getId(), PageRequest.of(0, 1)
                     );
                     Message lastMsg = latestMessages.isEmpty() ? null : latestMessages.get(0);
+
+                    String avatarUrl = null;
+                    if (conv.getAvatarMediaId() != null) {
+                        avatarUrl = mediaRepository.findById(conv.getAvatarMediaId())
+                                .map(com.leanhduc.telegramclone.model.Media::getUrl)
+                                .orElse(null);
+                    }
+
+                    List<UserDto> participants = memberRepository.findByConversationId(conv.getId()).stream()
+                            .map(member -> {
+                                User u = member.getUser();
+                                return new UserDto(
+                                        u.getId(),
+                                        u.getUsername(),
+                                        u.getDisplayName(),
+                                        u.getEmail(),
+                                        u.getBio(),
+                                        u.getAvatarMediaId(),
+                                        u.getRole()
+                                );
+                            })
+                            .toList();
+
+                    Long lastReadMsgId = unreadCounterRepository.findById(new UnreadCounterId(conv.getId(), userId))
+                            .map(com.leanhduc.telegramclone.model.UnreadCounter::getLastReadMessageId)
+                            .orElse(0L);
+                    int unreadCount = (int) messageRepository.countUnreadMessages(conv.getId(), userId, lastReadMsgId);
 
                     return new ConversationResponse(
                             conv.getId(),
@@ -125,9 +198,98 @@ public class ConversationService implements IConversationService {
                             conv.getCreatedAt(),
                             lastMsg != null ? lastMsg.getBody() : null,
                             lastMsg != null ? lastMsg.getCreatedAt() : null,
-                            partnerId
+                            partnerId,
+                            avatarUrl,
+                            conv.getAvatarMediaId(),
+                            conv.getDescription(),
+                            participants,
+                            lastMsg != null && lastMsg.getSender() != null ? lastMsg.getSender().getId() : null,
+                            unreadCount
                     );
                 })
                 .toList();
+    }
+
+    @Override
+    @Transactional
+    public ConversationResponse createGroupConversation(UUID creatorUserId, CreateGroupRequest request) {
+        User creator = userRepository.findById(creatorUserId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+
+        ConversationType type = request.getType() != null ? request.getType() : ConversationType.GROUP;
+
+        Conversation conversation = Conversation.builder()
+                .type(type)
+                .title(request.getTitle())
+                .description(request.getDescription())
+                .avatarMediaId(request.getAvatarMediaId())
+                .createdBy(creatorUserId)
+                .build();
+
+        conversation = conversationRepository.save(conversation);
+
+        // Add creator as OWNER
+        ConversationMember creatorMember = ConversationMember.builder()
+                .id(new ConversationMemberId(conversation.getId(), creatorUserId))
+                .conversation(conversation)
+                .user(creator)
+                .role(ConversationRole.OWNER)
+                .build();
+        memberRepository.save(creatorMember);
+
+        // Add other members as MEMBER
+        if (request.getMemberIds() != null) {
+            for (UUID memberId : request.getMemberIds()) {
+                if (memberId.equals(creatorUserId)) continue;
+                User memberUser = userRepository.findById(memberId)
+                        .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+
+                ConversationMember member = ConversationMember.builder()
+                        .id(new ConversationMemberId(conversation.getId(), memberId))
+                        .conversation(conversation)
+                        .user(memberUser)
+                        .role(ConversationRole.MEMBER)
+                        .build();
+                memberRepository.save(member);
+            }
+        }
+
+        String avatarUrl = null;
+        if (conversation.getAvatarMediaId() != null) {
+            avatarUrl = mediaRepository.findById(conversation.getAvatarMediaId())
+                    .map(com.leanhduc.telegramclone.model.Media::getUrl)
+                    .orElse(null);
+        }
+
+        List<UserDto> participants = memberRepository.findByConversationId(conversation.getId()).stream()
+                .map(member -> {
+                    User u = member.getUser();
+                    return new UserDto(
+                            u.getId(),
+                            u.getUsername(),
+                            u.getDisplayName(),
+                            u.getEmail(),
+                            u.getBio(),
+                            u.getAvatarMediaId(),
+                            u.getRole()
+                    );
+                })
+                .toList();
+
+        return new ConversationResponse(
+                conversation.getId(),
+                conversation.getType(),
+                conversation.getTitle(),
+                conversation.getCreatedAt(),
+                null,
+                null,
+                null,
+                avatarUrl,
+                conversation.getAvatarMediaId(),
+                conversation.getDescription(),
+                participants,
+                null,
+                0
+        );
     }
 }

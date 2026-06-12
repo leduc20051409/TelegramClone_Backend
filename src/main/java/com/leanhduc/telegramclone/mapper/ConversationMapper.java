@@ -11,5 +11,9 @@ public interface ConversationMapper {
     @Mapping(target = "lastMessage", ignore = true)
     @Mapping(target = "lastMessageTimestamp", ignore = true)
     @Mapping(target = "partnerId", ignore = true)
+    @Mapping(target = "avatarUrl", ignore = true)
+    @Mapping(target = "participants", ignore = true)
+    @Mapping(target = "lastMessageSenderId", ignore = true)
+    @Mapping(target = "unreadCount", ignore = true)
     ConversationResponse toResponse(Conversation conversation);
 }
