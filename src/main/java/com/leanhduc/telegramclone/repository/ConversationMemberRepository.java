@@ -11,7 +11,7 @@ import java.util.UUID;
 @Repository
 public interface ConversationMemberRepository extends JpaRepository<ConversationMember, ConversationMemberId> {
 
-    List<ConversationMember> findByConversationId(UUID conversationId);
+    List<ConversationMember> findByConversationIdAndLeftAtIsNull(UUID conversationId);
 
-    boolean existsByConversationIdAndUserId(UUID conversationId, UUID userId);
+    boolean existsByConversationIdAndUserIdAndLeftAtIsNull(UUID conversationId, UUID userId);
 }

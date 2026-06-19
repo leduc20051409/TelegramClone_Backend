@@ -37,4 +37,11 @@ public class ConversationMember {
     @CreationTimestamp
     @Column(name = "joined_at", updatable = false)
     private Instant joinedAt;
+
+    @Column(name = "left_at")
+    private Instant leftAt;
+
+    @Column(name = "is_muted", nullable = false)
+    @Builder.Default
+    private boolean isMuted = false;
 }

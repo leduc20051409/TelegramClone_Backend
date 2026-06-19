@@ -19,6 +19,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import com.leanhduc.telegramclone.dto.conversation.CreateGroupRequest;
+import com.leanhduc.telegramclone.dto.conversation.UpdateConversationRequest;
 import com.leanhduc.telegramclone.dto.user.UserDto;
 import com.leanhduc.telegramclone.repository.MediaRepository;
 import java.util.List;
@@ -60,7 +61,7 @@ public class ConversationService implements IConversationService {
                     conv.getId(), PageRequest.of(0, 1)
             );
             Message lastMsg = latestMessages.isEmpty() ? null : latestMessages.get(0);
-            List<UserDto> participants = memberRepository.findByConversationId(conv.getId()).stream()
+            List<UserDto> participants = memberRepository.findByConversationIdAndLeftAtIsNull(conv.getId()).stream()
                     .map(member -> {
                         User u = member.getUser();
                         return new UserDto(
@@ -70,7 +71,8 @@ public class ConversationService implements IConversationService {
                                 u.getEmail(),
                                 u.getBio(),
                                 u.getAvatarMediaId(),
-                                u.getRole()
+                                u.getRole(),
+                                member.getRole() != null ? member.getRole().name() : null
                         );
                     })
                     .toList();
@@ -139,7 +141,7 @@ public class ConversationService implements IConversationService {
     @Override
     @Transactional(readOnly = true)
     public List<UUID> getConversationMemberIds(UUID conversationId) {
-        return memberRepository.findByConversationId(conversationId).stream()
+        return memberRepository.findByConversationIdAndLeftAtIsNull(conversationId).stream()
                 .map(member -> member.getUser().getId())
                 .toList();
     }
@@ -152,7 +154,7 @@ public class ConversationService implements IConversationService {
                 .map(conv -> {
                     UUID partnerId = null;
                     if (conv.getType() == ConversationType.PRIVATE) {
-                        partnerId = memberRepository.findByConversationId(conv.getId()).stream()
+                        partnerId = memberRepository.findByConversationIdAndLeftAtIsNull(conv.getId()).stream()
                                 .map(member -> member.getUser().getId())
                                 .filter(id -> !id.equals(userId))
                                 .findFirst()
@@ -171,7 +173,7 @@ public class ConversationService implements IConversationService {
                                 .orElse(null);
                     }
 
-                    List<UserDto> participants = memberRepository.findByConversationId(conv.getId()).stream()
+                    List<UserDto> participants = memberRepository.findByConversationIdAndLeftAtIsNull(conv.getId()).stream()
                             .map(member -> {
                                 User u = member.getUser();
                                 return new UserDto(
@@ -181,7 +183,8 @@ public class ConversationService implements IConversationService {
                                         u.getEmail(),
                                         u.getBio(),
                                         u.getAvatarMediaId(),
-                                        u.getRole()
+                                        u.getRole(),
+                                        member.getRole() != null ? member.getRole().name() : null
                                 );
                             })
                             .toList();
@@ -261,7 +264,7 @@ public class ConversationService implements IConversationService {
                     .orElse(null);
         }
 
-        List<UserDto> participants = memberRepository.findByConversationId(conversation.getId()).stream()
+        List<UserDto> participants = memberRepository.findByConversationIdAndLeftAtIsNull(conversation.getId()).stream()
                 .map(member -> {
                     User u = member.getUser();
                     return new UserDto(
@@ -271,7 +274,8 @@ public class ConversationService implements IConversationService {
                             u.getEmail(),
                             u.getBio(),
                             u.getAvatarMediaId(),
-                            u.getRole()
+                            u.getRole(),
+                            member.getRole() != null ? member.getRole().name() : null
                     );
                 })
                 .toList();
@@ -291,5 +295,302 @@ public class ConversationService implements IConversationService {
                 null,
                 0
         );
+    }
+
+    @Override
+    @Transactional
+    public void leaveConversation(UUID userId, UUID conversationId) {
+        Conversation conversation = conversationRepository.findById(conversationId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.CONVERSATION_NOT_FOUND));
+
+        if (conversation.getType() == ConversationType.PRIVATE) {
+            throw new BusinessException(ErrorCode.NOT_IN_CONVERSATION);
+        }
+
+        ConversationMember member = memberRepository.findById(new ConversationMemberId(conversationId, userId))
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_IN_CONVERSATION));
+
+        if (member.getLeftAt() != null) {
+            throw new BusinessException(ErrorCode.NOT_IN_CONVERSATION);
+        }
+
+        member.setLeftAt(java.time.Instant.now());
+        memberRepository.save(member);
+
+        // If the owner left, transfer ownership to another admin or active member if any exist
+        if (member.getRole() == ConversationRole.OWNER) {
+            List<ConversationMember> activeMembers = memberRepository.findByConversationIdAndLeftAtIsNull(conversationId);
+            if (!activeMembers.isEmpty()) {
+                // Find first admin or first member
+                ConversationMember newOwner = activeMembers.stream()
+                        .filter(m -> m.getRole() == ConversationRole.ADMIN)
+                        .findFirst()
+                        .orElse(activeMembers.get(0));
+
+                newOwner.setRole(ConversationRole.OWNER);
+                memberRepository.save(newOwner);
+            }
+        }
+    }
+
+    @Override
+    @Transactional
+    public ConversationResponse addMember(UUID requesterId, UUID conversationId, UUID targetUserId) {
+        Conversation conversation = conversationRepository.findById(conversationId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.CONVERSATION_NOT_FOUND));
+
+        if (conversation.getType() == ConversationType.PRIVATE) {
+            throw new BusinessException(ErrorCode.CANNOT_CHAT_WITH_YOURSELF);
+        }
+
+        // Requester must be active member
+        ConversationMember requesterMember = memberRepository.findById(new ConversationMemberId(conversationId, requesterId))
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_IN_CONVERSATION));
+        if (requesterMember.getLeftAt() != null) {
+            throw new BusinessException(ErrorCode.NOT_IN_CONVERSATION);
+        }
+
+        // If it is a CHANNEL, requester must be OWNER or ADMIN
+        if (conversation.getType() == ConversationType.CHANNEL &&
+                requesterMember.getRole() != ConversationRole.OWNER &&
+                requesterMember.getRole() != ConversationRole.ADMIN) {
+            throw new BusinessException(ErrorCode.NOT_IN_CONVERSATION);
+        }
+
+        User targetUser = userRepository.findById(targetUserId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+
+        // Check if target user is already an active member
+        Optional<ConversationMember> targetMemberOpt = memberRepository.findById(new ConversationMemberId(conversationId, targetUserId));
+        if (targetMemberOpt.isPresent()) {
+            ConversationMember targetMember = targetMemberOpt.get();
+            if (targetMember.getLeftAt() == null) {
+                throw new BusinessException(ErrorCode.CONTACT_ALREADY_EXISTS);
+            }
+            // User had left, let's reactivate them
+            targetMember.setLeftAt(null);
+            targetMember.setJoinedAt(java.time.Instant.now());
+            targetMember.setRole(ConversationRole.MEMBER);
+            memberRepository.save(targetMember);
+        } else {
+            // New member
+            ConversationMember newMember = ConversationMember.builder()
+                    .id(new ConversationMemberId(conversationId, targetUserId))
+                    .conversation(conversation)
+                    .user(targetUser)
+                    .role(ConversationRole.MEMBER)
+                    .joinedAt(java.time.Instant.now())
+                    .build();
+            memberRepository.save(newMember);
+        }
+
+        String avatarUrl = null;
+        if (conversation.getAvatarMediaId() != null) {
+            avatarUrl = mediaRepository.findById(conversation.getAvatarMediaId())
+                    .map(com.leanhduc.telegramclone.model.Media::getUrl)
+                    .orElse(null);
+        }
+
+        List<UserDto> participants = memberRepository.findByConversationIdAndLeftAtIsNull(conversation.getId()).stream()
+                .map(m -> {
+                    User u = m.getUser();
+                    return new UserDto(
+                            u.getId(),
+                            u.getUsername(),
+                            u.getDisplayName(),
+                            u.getEmail(),
+                            u.getBio(),
+                            u.getAvatarMediaId(),
+                            u.getRole(),
+                            m.getRole() != null ? m.getRole().name() : null
+                    );
+                })
+                .toList();
+
+        return new ConversationResponse(
+                conversation.getId(),
+                conversation.getType(),
+                conversation.getTitle(),
+                conversation.getCreatedAt(),
+                null,
+                null,
+                null,
+                avatarUrl,
+                conversation.getAvatarMediaId(),
+                conversation.getDescription(),
+                participants,
+                null,
+                0
+        );
+    }
+
+    @Override
+    @Transactional
+    public ConversationResponse updateConversation(UUID requesterId, UUID conversationId, UpdateConversationRequest request) {
+        Conversation conversation = conversationRepository.findById(conversationId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.CONVERSATION_NOT_FOUND));
+
+        if (conversation.getType() == ConversationType.PRIVATE) {
+            throw new BusinessException(ErrorCode.CANNOT_CHAT_WITH_YOURSELF);
+        }
+
+        // Requester must be active member
+        ConversationMember requesterMember = memberRepository.findById(new ConversationMemberId(conversationId, requesterId))
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_IN_CONVERSATION));
+        if (requesterMember.getLeftAt() != null) {
+            throw new BusinessException(ErrorCode.NOT_IN_CONVERSATION);
+        }
+
+        // Requester must be OWNER or ADMIN to edit details
+        if (requesterMember.getRole() != ConversationRole.OWNER &&
+                requesterMember.getRole() != ConversationRole.ADMIN) {
+            throw new BusinessException(ErrorCode.NOT_IN_CONVERSATION);
+        }
+
+        if (request.getTitle() != null && !request.getTitle().trim().isEmpty()) {
+            conversation.setTitle(request.getTitle());
+        }
+        if (request.getDescription() != null) {
+            conversation.setDescription(request.getDescription());
+        }
+        if (request.getAvatarMediaId() != null) {
+            conversation.setAvatarMediaId(request.getAvatarMediaId());
+        }
+
+        conversation = conversationRepository.save(conversation);
+
+        String avatarUrl = null;
+        if (conversation.getAvatarMediaId() != null) {
+            avatarUrl = mediaRepository.findById(conversation.getAvatarMediaId())
+                    .map(com.leanhduc.telegramclone.model.Media::getUrl)
+                    .orElse(null);
+        }
+
+        List<UserDto> participants = memberRepository.findByConversationIdAndLeftAtIsNull(conversation.getId()).stream()
+                .map(m -> {
+                    User u = m.getUser();
+                    return new UserDto(
+                            u.getId(),
+                            u.getUsername(),
+                            u.getDisplayName(),
+                            u.getEmail(),
+                            u.getBio(),
+                            u.getAvatarMediaId(),
+                            u.getRole(),
+                            m.getRole() != null ? m.getRole().name() : null
+                    );
+                })
+                .toList();
+
+        return new ConversationResponse(
+                conversation.getId(),
+                conversation.getType(),
+                conversation.getTitle(),
+                conversation.getCreatedAt(),
+                null,
+                null,
+                null,
+                avatarUrl,
+                conversation.getAvatarMediaId(),
+                conversation.getDescription(),
+                participants,
+                null,
+                0
+        );
+    }
+
+    @Override
+    @Transactional
+    public void removeMember(UUID requesterId, UUID conversationId, UUID targetUserId) {
+        Conversation conversation = conversationRepository.findById(conversationId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.CONVERSATION_NOT_FOUND));
+
+        if (conversation.getType() == ConversationType.PRIVATE) {
+            throw new BusinessException(ErrorCode.CANNOT_CHAT_WITH_YOURSELF);
+        }
+
+        if (requesterId.equals(targetUserId)) {
+            throw new BusinessException(ErrorCode.CANNOT_ADD_SELF);
+        }
+
+        // Requester must be active member
+        ConversationMember requesterMember = memberRepository.findById(new ConversationMemberId(conversationId, requesterId))
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_IN_CONVERSATION));
+        if (requesterMember.getLeftAt() != null) {
+            throw new BusinessException(ErrorCode.NOT_IN_CONVERSATION);
+        }
+
+        // Requester must be OWNER or ADMIN to remove members
+        if (requesterMember.getRole() != ConversationRole.OWNER &&
+                requesterMember.getRole() != ConversationRole.ADMIN) {
+            throw new BusinessException(ErrorCode.NOT_IN_CONVERSATION);
+        }
+
+        ConversationMember targetMember = memberRepository.findById(new ConversationMemberId(conversationId, targetUserId))
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+
+        if (targetMember.getLeftAt() != null) {
+            throw new BusinessException(ErrorCode.USER_NOT_FOUND);
+        }
+
+        // Target cannot be OWNER
+        if (targetMember.getRole() == ConversationRole.OWNER) {
+            throw new BusinessException(ErrorCode.UNAUTHORIZED_MESSAGE_ACTION);
+        }
+
+        // ADMIN cannot remove another ADMIN (only OWNER can)
+        if (requesterMember.getRole() == ConversationRole.ADMIN && targetMember.getRole() == ConversationRole.ADMIN) {
+            throw new BusinessException(ErrorCode.UNAUTHORIZED_MESSAGE_ACTION);
+        }
+
+        targetMember.setLeftAt(java.time.Instant.now());
+        memberRepository.save(targetMember);
+    }
+
+    @Override
+    @Transactional
+    public void updateMemberRole(UUID requesterId, UUID conversationId, UUID targetUserId, ConversationRole role) {
+        Conversation conversation = conversationRepository.findById(conversationId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.CONVERSATION_NOT_FOUND));
+
+        if (conversation.getType() == ConversationType.PRIVATE) {
+            throw new BusinessException(ErrorCode.CANNOT_CHAT_WITH_YOURSELF);
+        }
+
+        // Requester must be active OWNER
+        ConversationMember requesterMember = memberRepository.findById(new ConversationMemberId(conversationId, requesterId))
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_IN_CONVERSATION));
+        if (requesterMember.getLeftAt() != null || requesterMember.getRole() != ConversationRole.OWNER) {
+            throw new BusinessException(ErrorCode.NOT_IN_CONVERSATION);
+        }
+
+        ConversationMember targetMember = memberRepository.findById(new ConversationMemberId(conversationId, targetUserId))
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+        if (targetMember.getLeftAt() != null) {
+            throw new BusinessException(ErrorCode.USER_NOT_FOUND);
+        }
+
+        if (role == ConversationRole.OWNER) {
+            requesterMember.setRole(ConversationRole.ADMIN);
+            memberRepository.save(requesterMember);
+            targetMember.setRole(ConversationRole.OWNER);
+            memberRepository.save(targetMember);
+        } else {
+            targetMember.setRole(role);
+            memberRepository.save(targetMember);
+        }
+    }
+
+    @Override
+    @Transactional
+    public void updateMemberMute(UUID requesterId, UUID conversationId, boolean isMuted) {
+        ConversationMember requesterMember = memberRepository.findById(new ConversationMemberId(conversationId, requesterId))
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_IN_CONVERSATION));
+        if (requesterMember.getLeftAt() != null) {
+            throw new BusinessException(ErrorCode.NOT_IN_CONVERSATION);
+        }
+
+        requesterMember.setMuted(isMuted);
+        memberRepository.save(requesterMember);
     }
 }

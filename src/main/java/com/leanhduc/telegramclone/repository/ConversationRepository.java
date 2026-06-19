@@ -26,6 +26,6 @@ public interface ConversationRepository extends JpaRepository<Conversation, UUID
 
     @Query("SELECT DISTINCT c FROM Conversation c " +
             "JOIN ConversationMember cm ON c.id = cm.conversation.id " +
-            "WHERE cm.user.id = :userId")
+            "WHERE cm.user.id = :userId AND cm.leftAt IS NULL")
     List<Conversation> findAllByMember(@Param("userId") UUID userId);
 }

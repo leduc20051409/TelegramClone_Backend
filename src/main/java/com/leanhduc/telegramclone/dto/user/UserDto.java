@@ -19,4 +19,16 @@ public class UserDto {
     private String bio;
     private UUID avatarMediaId;
     private RoleUser role;
+    private String groupRole;
+
+    public UserDto(UUID id, String username, String displayName, String email, String bio, UUID avatarMediaId, RoleUser role) {
+        this.id = id;
+        this.username = username;
+        this.displayName = displayName;
+        this.email = email;
+        this.bio = bio;
+        this.avatarMediaId = avatarMediaId;
+        this.role = role;
+        this.groupRole = null;
+    }
 }

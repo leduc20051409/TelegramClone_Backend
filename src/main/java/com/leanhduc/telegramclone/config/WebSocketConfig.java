@@ -1,5 +1,6 @@
 package com.leanhduc.telegramclone.config;
 
+import com.leanhduc.telegramclone.repository.UserRepository;
 import com.leanhduc.telegramclone.security.JwtTokenProvider;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -30,6 +31,7 @@ import java.util.UUID;
 public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     private final JwtTokenProvider jwtTokenProvider;
+    private final UserRepository userRepository;
 
     @Override
     public void configureMessageBroker(MessageBrokerRegistry registry) {
@@ -73,6 +75,21 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
                     } else {
                         log.error("Missing Authorization header in WebSocket connect");
                         throw new IllegalArgumentException("Missing Authorization header");
+                    }
+                } else if (StompCommand.SEND.equals(accessor != null ? accessor.getCommand() : null)) {
+                    java.security.Principal principal = accessor.getUser();
+                    if (principal != null) {
+                        try {
+                            UUID userId = UUID.fromString(principal.getName());
+                            boolean exists = userRepository.existsById(userId);
+                            if (!exists) {
+                                log.error("User {} is no longer active. Dropping message.", userId);
+                                throw new IllegalArgumentException("User session invalid");
+                            }
+                        } catch (Exception e) {
+                            log.error("Failed to validate principal on SEND", e);
+                            throw new IllegalArgumentException("Invalid principal");
+                        }
                     }
                 }
                 return message;

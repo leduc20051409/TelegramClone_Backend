@@ -43,7 +43,7 @@ public class MessageService implements IMessageService {
     @Override
     @Transactional
     public ChatMessageResponse saveMessage(UUID senderId, ChatMessageRequest request) {
-        boolean isMember = memberRepository.existsByConversationIdAndUserId(request.conversationId(), senderId);
+        boolean isMember = memberRepository.existsByConversationIdAndUserIdAndLeftAtIsNull(request.conversationId(), senderId);
         if (!isMember) {
             throw new BusinessException(ErrorCode.NOT_IN_CONVERSATION);
         }
@@ -106,7 +106,7 @@ public class MessageService implements IMessageService {
     @Override
     @Transactional(readOnly = true)
     public List<ChatMessageResponse> getMessageHistory(UUID conversationId, UUID currentUserId, Long cursor, int size) {
-        boolean isMember = memberRepository.existsByConversationIdAndUserId(conversationId, currentUserId);
+        boolean isMember = memberRepository.existsByConversationIdAndUserIdAndLeftAtIsNull(conversationId, currentUserId);
         if (!isMember) {
             throw new BusinessException(ErrorCode.NOT_IN_CONVERSATION);
         }
@@ -122,7 +122,7 @@ public class MessageService implements IMessageService {
 
     @Override
     public void markMessagesAsRead(UUID currentUserId, ChatReadRequest request) {
-        if (!memberRepository.existsByConversationIdAndUserId(request.conversationId(), currentUserId)) {
+        if (!memberRepository.existsByConversationIdAndUserIdAndLeftAtIsNull(request.conversationId(), currentUserId)) {
             throw new BusinessException(ErrorCode.NOT_IN_CONVERSATION);
         }
         Conversation conversationRef = conversationRepository.getReferenceById(request.conversationId());
