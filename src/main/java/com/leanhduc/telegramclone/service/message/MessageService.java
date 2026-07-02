@@ -112,7 +112,8 @@ public class MessageService implements IMessageService {
         }
 
         List<MediaAttachmentDto> mediaDtos = buildMediaDtos(mediaIds, mediaById);
-        return messageMapper.toResponse(message, mediaDtos);
+        Long viewCount = conversation.getType() == com.leanhduc.telegramclone.model.enums.ConversationType.CHANNEL ? 0L : null;
+        return messageMapper.toResponse(message, mediaDtos, viewCount);
     }
 
     @Override
@@ -168,6 +169,14 @@ public class MessageService implements IMessageService {
                     .add(messageMedia);
         }
 
+        boolean isChannel = !messages.isEmpty() && messages.get(0).getConversation().getType() == com.leanhduc.telegramclone.model.enums.ConversationType.CHANNEL;
+        Map<Long, Long> viewCountByMessageId = new HashMap<>();
+        if (isChannel) {
+            List<MessagePostView> postViews = messagePostViewRepository.findAllById(messageIds);
+            viewCountByMessageId = postViews.stream()
+                    .collect(Collectors.toMap(MessagePostView::getMessageId, MessagePostView::getViewCount));
+        }
+
         List<ChatMessageResponse> responses = new ArrayList<>(messages.size());
         for (Message message : messages) {
             List<MessageMedia> attachments = mediaByMessageId.getOrDefault(message.getId(), List.of());
@@ -175,7 +184,8 @@ public class MessageService implements IMessageService {
                     .map(MessageMedia::getMedia)
                     .map(this::toMediaDto)
                     .toList();
-            responses.add(messageMapper.toResponse(message, mediaDtos));
+            Long viewCount = isChannel ? viewCountByMessageId.getOrDefault(message.getId(), 0L) : null;
+            responses.add(messageMapper.toResponse(message, mediaDtos, viewCount));
         }
         return responses;
     }
@@ -268,7 +278,14 @@ public class MessageService implements IMessageService {
                 .map(this::toMediaDto)
                 .toList();
 
-        return messageMapper.toResponse(message, mediaDtos);
+        Long viewCount = null;
+        if (message.getConversation().getType() == com.leanhduc.telegramclone.model.enums.ConversationType.CHANNEL) {
+            viewCount = messagePostViewRepository.findById(messageId)
+                    .map(MessagePostView::getViewCount)
+                    .orElse(0L);
+        }
+
+        return messageMapper.toResponse(message, mediaDtos, viewCount);
     }
 
     @Override

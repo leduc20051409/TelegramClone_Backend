@@ -14,9 +14,14 @@ public interface MessageMapper {
     @Mapping(source = "sender.id", target = "senderId")
     @Mapping(source = "body", target = "message")
     @Mapping(target = "media", ignore = true)
+    @Mapping(target = "viewCount", ignore = true)
     ChatMessageResponse toResponse(Message message);
 
     default ChatMessageResponse toResponse(Message message, List<MediaAttachmentDto> media) {
+        return toResponse(message, media, null);
+    }
+
+    default ChatMessageResponse toResponse(Message message, List<MediaAttachmentDto> media, Long viewCount) {
         ChatMessageResponse base = toResponse(message);
         return new ChatMessageResponse(
                 base.id(),
@@ -26,7 +31,8 @@ public interface MessageMapper {
                 base.createdAt(),
                 media,
                 base.edited(),
-                base.updatedAt()
+                base.updatedAt(),
+                viewCount
         );
     }
 }
