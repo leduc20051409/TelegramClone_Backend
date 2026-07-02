@@ -34,7 +34,8 @@ public enum ErrorCode {
     MEDIA_NOT_FOUND("Media not found", HttpStatus.NOT_FOUND),
     DELETE_MEDIA_FAILED("Failed to delete media", HttpStatus.INTERNAL_SERVER_ERROR),
     MESSAGE_NOT_FOUND("Message not found", HttpStatus.NOT_FOUND),
-    UNAUTHORIZED_MESSAGE_ACTION("You can only modify or delete your own messages", HttpStatus.FORBIDDEN);
+    UNAUTHORIZED_MESSAGE_ACTION("You can only modify or delete your own messages", HttpStatus.FORBIDDEN),
+    SUBSCRIBERS_CANNOT_POST("Subscribers cannot post in a channel", HttpStatus.FORBIDDEN);
 
     private final String message;
     private final HttpStatus status;

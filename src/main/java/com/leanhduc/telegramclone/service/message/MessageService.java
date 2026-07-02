@@ -11,6 +11,8 @@ import com.leanhduc.telegramclone.mapper.MessageMapper;
 import com.leanhduc.telegramclone.model.*;
 import com.leanhduc.telegramclone.model.enums.MessageType;
 import com.leanhduc.telegramclone.model.enums.MediaStatus;
+import com.leanhduc.telegramclone.model.enums.ConversationRole;
+import com.leanhduc.telegramclone.model.enums.ConversationType;
 import com.leanhduc.telegramclone.repository.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
@@ -39,16 +41,26 @@ public class MessageService implements IMessageService {
     private final MediaRepository mediaRepository;
     private final MessageMediaRepository messageMediaRepository;
     private final MessageMapper messageMapper;
+    private final MessagePostViewRepository messagePostViewRepository;
 
     @Override
     @Transactional
     public ChatMessageResponse saveMessage(UUID senderId, ChatMessageRequest request) {
-        boolean isMember = memberRepository.existsByConversationIdAndUserIdAndLeftAtIsNull(request.conversationId(), senderId);
-        if (!isMember) {
+        Conversation conversation = conversationRepository.findById(request.conversationId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.CONVERSATION_NOT_FOUND));
+
+        ConversationMember member = memberRepository.findById(new ConversationMemberId(request.conversationId(), senderId))
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_IN_CONVERSATION));
+        if (member.getLeftAt() != null) {
             throw new BusinessException(ErrorCode.NOT_IN_CONVERSATION);
         }
-        Conversation conversation = conversationRepository.findById(request.conversationId())
-                .orElseThrow(() -> new BusinessException(ErrorCode.CONVERSATION_NOT_FOUND)); // Thêm lỗi này vào ErrorCode
+
+        if (conversation.getType() == ConversationType.CHANNEL &&
+                member.getRole() != ConversationRole.OWNER &&
+                member.getRole() != ConversationRole.ADMIN) {
+            throw new BusinessException(ErrorCode.SUBSCRIBERS_CANNOT_POST);
+        }
+
         User sender = userRepository.findById(senderId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
 
@@ -277,5 +289,25 @@ public class MessageService implements IMessageService {
         messageRepository.save(message);
 
         return message.getConversation().getId();
+    }
+
+    @Override
+    @Transactional
+    public void incrementViews(UUID userId, UUID conversationId, List<Long> messageIds) {
+        if (messageIds == null || messageIds.isEmpty()) {
+            return;
+        }
+
+        boolean isMember = memberRepository.existsByConversationIdAndUserIdAndLeftAtIsNull(conversationId, userId);
+        if (!isMember) {
+            throw new BusinessException(ErrorCode.NOT_IN_CONVERSATION);
+        }
+
+        List<Message> messages = messageRepository.findAllById(messageIds);
+        for (Message message : messages) {
+            if (message.getConversation().getId().equals(conversationId)) {
+                messagePostViewRepository.incrementViewCount(message.getId());
+            }
+        }
     }
 }

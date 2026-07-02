@@ -19,4 +19,6 @@ public interface IMessageService {
     ChatMessageResponse editMessage(UUID currentUserId, Long messageId, EditMessageRequest request);
 
     UUID deleteMessage(UUID currentUserId, Long messageId);
+
+    void incrementViews(UUID userId, UUID conversationId, List<Long> messageIds);
 }

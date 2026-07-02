@@ -343,15 +343,20 @@ public class ConversationService implements IConversationService {
             throw new BusinessException(ErrorCode.CANNOT_CHAT_WITH_YOURSELF);
         }
 
-        // Requester must be active member
-        ConversationMember requesterMember = memberRepository.findById(new ConversationMemberId(conversationId, requesterId))
-                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_IN_CONVERSATION));
-        if (requesterMember.getLeftAt() != null) {
-            throw new BusinessException(ErrorCode.NOT_IN_CONVERSATION);
+        // Requester must be active member OR they are joining a public conversation themselves
+        boolean isSelfJoin = conversation.isPublic() && requesterId.equals(targetUserId);
+
+        ConversationMember requesterMember = null;
+        if (!isSelfJoin) {
+            requesterMember = memberRepository.findById(new ConversationMemberId(conversationId, requesterId))
+                    .orElseThrow(() -> new BusinessException(ErrorCode.NOT_IN_CONVERSATION));
+            if (requesterMember.getLeftAt() != null) {
+                throw new BusinessException(ErrorCode.NOT_IN_CONVERSATION);
+            }
         }
 
-        // If it is a CHANNEL, requester must be OWNER or ADMIN
-        if (conversation.getType() == ConversationType.CHANNEL &&
+        // If it is a CHANNEL, requester must be OWNER or ADMIN (unless it is a public self-join)
+        if (conversation.getType() == ConversationType.CHANNEL && !isSelfJoin &&
                 requesterMember.getRole() != ConversationRole.OWNER &&
                 requesterMember.getRole() != ConversationRole.ADMIN) {
             throw new BusinessException(ErrorCode.NOT_IN_CONVERSATION);
@@ -592,5 +597,46 @@ public class ConversationService implements IConversationService {
 
         requesterMember.setMuted(isMuted);
         memberRepository.save(requesterMember);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public ConversationType getConversationType(UUID conversationId) {
+        return conversationRepository.findById(conversationId)
+                .map(Conversation::getType)
+                .orElseThrow(() -> new BusinessException(ErrorCode.CONVERSATION_NOT_FOUND));
+    }
+
+    @Override
+    @Transactional
+    public void deleteConversation(UUID requesterId, UUID conversationId) {
+        Conversation conversation = conversationRepository.findById(conversationId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.CONVERSATION_NOT_FOUND));
+
+        if (conversation.getType() == ConversationType.PRIVATE) {
+            throw new BusinessException(ErrorCode.UNAUTHORIZED_MESSAGE_ACTION);
+        }
+
+        ConversationMember requesterMember = memberRepository.findById(new ConversationMemberId(conversationId, requesterId))
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_IN_CONVERSATION));
+        if (requesterMember.getLeftAt() != null) {
+            throw new BusinessException(ErrorCode.NOT_IN_CONVERSATION);
+        }
+
+        if (requesterMember.getRole() != ConversationRole.OWNER) {
+            throw new BusinessException(ErrorCode.UNAUTHORIZED_MESSAGE_ACTION);
+        }
+
+        // 1. Delete dependent records
+        conversationRepository.deletePinnedMessagesByConversationId(conversationId);
+        conversationRepository.deleteUnreadCountersByConversationId(conversationId);
+        conversationRepository.deleteMessageMediaByConversationId(conversationId);
+        conversationRepository.deleteMessageReactionsByConversationId(conversationId);
+        conversationRepository.deleteMessagePostViewsByConversationId(conversationId);
+        conversationRepository.deleteConversationMembersByConversationId(conversationId);
+        conversationRepository.deleteMessagesByConversationId(conversationId);
+
+        // 2. Delete the conversation itself
+        conversationRepository.deleteById(conversationId);
     }
 }

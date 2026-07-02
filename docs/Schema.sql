@@ -76,7 +76,7 @@ alter table conversations
 create table conversation_members (  
   conversation_id uuid not null,  
   user_id uuid not null,  
-  role text not null default 'member',  
+  role text not null default 'MEMBER',  
   joined_at timestamptz default now(),  
   left_at timestamptz,  
   is_muted boolean not null default false,  
@@ -88,7 +88,8 @@ create index idx_conversation_members_user on conversation_members (user_id);
 create index idx_conversation_members_active on conversation_members (conversation_id) where left_at is null;  
 alter table conversation_members  
   add constraint conversation_members_conv_fkey foreign key (conversation_id) references conversations (id),  
-  add constraint conversation_members_user_fkey foreign key (user_id) references users (id);  
+  add constraint conversation_members_user_fkey foreign key (user_id) references users (id),
+  add constraint conversation_members_role_check check (role in ('OWNER', 'ADMIN', 'MEMBER'));  
   
 -- messages (append-only). id uses identity (monotonic).  
 create table messages (  
@@ -226,10 +227,18 @@ alter table conversation_list
 create index idx_messages_deleted on messages (deleted) where deleted = true;  
 create index idx_messages_sender on messages (sender_id);  
   
+-- message_post_views (pk message_id)
+create table message_post_views (
+  message_id int8 primary key references messages(id) on delete cascade,
+  view_count int8 not null default 0,
+  updated_at timestamptz default now()
+);
+
 -- example autovacuum tuning for high-update candidate tables  
 alter table unread_counters set (autovacuum_vacuum_scale_factor = 0.01, autovacuum_vacuum_threshold = 50);  
 alter table message_delivery_status set (autovacuum_vacuum_scale_factor = 0.02, autovacuum_vacuum_threshold = 100);  
-  
+alter table message_post_views set (autovacuum_vacuum_scale_factor = 0.02, autovacuum_vacuum_threshold = 100);  
+
 -- recommended constraints & defaults enforced  
 alter table messages alter column message_type set default 'text';  
 alter table messages alter column deleted set not null;  

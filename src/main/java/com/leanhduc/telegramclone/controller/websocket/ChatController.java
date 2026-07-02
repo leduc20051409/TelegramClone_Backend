@@ -6,6 +6,7 @@ import com.leanhduc.telegramclone.dto.message.ChatReadRequest;
 import com.leanhduc.telegramclone.dto.message.ChatTypingRequest;
 import com.leanhduc.telegramclone.dto.message.ChatTypingResponse;
 import com.leanhduc.telegramclone.dto.websocket.WsEnvelope;
+import com.leanhduc.telegramclone.model.enums.ConversationType;
 import com.leanhduc.telegramclone.service.conversation.IConversationService;
 import com.leanhduc.telegramclone.service.message.IMessageService;
 import com.leanhduc.telegramclone.service.typing.ITypingService;
@@ -64,6 +65,12 @@ public class ChatController {
     public void handleTyping(@Payload ChatTypingRequest request, Principal principal) {
         if (principal == null) return;
         UUID userId = UUID.fromString(principal.getName());
+        
+        // Prevent typing indicators in channels
+        if (conversationService.getConversationType(request.conversationId()) == ConversationType.CHANNEL) {
+            return;
+        }
+
         List<UUID> memberIds = conversationService.getConversationMemberIds(request.conversationId());
 
         if (!memberIds.contains(userId)) {

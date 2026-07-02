@@ -6,6 +6,8 @@ import com.leanhduc.telegramclone.dto.conversation.UpdateConversationRequest;
 import com.leanhduc.telegramclone.dto.conversation.UpdateRoleRequest;
 import com.leanhduc.telegramclone.dto.conversation.ConversationResponse;
 import com.leanhduc.telegramclone.service.conversation.IConversationService;
+import com.leanhduc.telegramclone.service.message.IMessageService;
+import com.leanhduc.telegramclone.dto.message.ChannelViewsRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -21,6 +23,7 @@ import java.util.UUID;
 public class ConversationController {
 
     private final IConversationService conversationService;
+    private final IMessageService messageService;
 
     @PostMapping("/private/{targetUserId}")
     public ResponseEntity<ConversationResponse> getOrCreatePrivateChat(
@@ -72,6 +75,16 @@ public class ConversationController {
         return ResponseEntity.ok(response);
     }
 
+    @PostMapping("/{conversationId}/join")
+    public ResponseEntity<ConversationResponse> joinConversation(
+            @PathVariable UUID conversationId,
+            Principal principal
+    ) {
+        UUID userId = UUID.fromString(principal.getName());
+        ConversationResponse response = conversationService.addMember(userId, conversationId, userId);
+        return ResponseEntity.ok(response);
+    }
+
     @PutMapping("/{conversationId}")
     public ResponseEntity<ConversationResponse> updateConversation(
             @PathVariable UUID conversationId,
@@ -81,6 +94,16 @@ public class ConversationController {
         UUID requesterId = UUID.fromString(principal.getName());
         ConversationResponse response = conversationService.updateConversation(requesterId, conversationId, request);
         return ResponseEntity.ok(response);
+    }
+
+    @DeleteMapping("/{conversationId}")
+    public ResponseEntity<Void> deleteConversation(
+            @PathVariable UUID conversationId,
+            Principal principal
+    ) {
+        UUID requesterId = UUID.fromString(principal.getName());
+        conversationService.deleteConversation(requesterId, conversationId);
+        return ResponseEntity.noContent().build();
     }
 
     @DeleteMapping("/{conversationId}/members/{userId}")
@@ -114,6 +137,17 @@ public class ConversationController {
     ) {
         UUID requesterId = UUID.fromString(principal.getName());
         conversationService.updateMemberMute(requesterId, conversationId, isMuted);
+        return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("/{conversationId}/views")
+    public ResponseEntity<Void> incrementViews(
+            @PathVariable UUID conversationId,
+            @RequestBody ChannelViewsRequest request,
+            Principal principal
+    ) {
+        UUID userId = UUID.fromString(principal.getName());
+        messageService.incrementViews(userId, conversationId, request.messageIds());
         return ResponseEntity.ok().build();
     }
 }
