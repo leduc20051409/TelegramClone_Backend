@@ -15,6 +15,7 @@ public record ChatMessageResponse(
         List<MediaAttachmentDto> media,
         boolean edited,
         Instant updatedAt,
-        Long viewCount
+        Long viewCount,
+        String messageType
 ) {
 }

@@ -32,7 +32,8 @@ public interface MessageMapper {
                 media,
                 base.edited(),
                 base.updatedAt(),
-                viewCount
+                viewCount,
+                base.messageType()
         );
     }
 }

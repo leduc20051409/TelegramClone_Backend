@@ -1,6 +1,7 @@
 package com.leanhduc.telegramclone.dto.conversation;
 
 import com.leanhduc.telegramclone.dto.user.UserDto;
+import com.leanhduc.telegramclone.dto.message.ChatMessageResponse;
 import com.leanhduc.telegramclone.model.enums.ConversationType;
 import java.time.Instant;
 import java.util.List;
@@ -19,6 +20,7 @@ public record ConversationResponse(
         String description,
         List<UserDto> participants,
         UUID lastMessageSenderId,
-        Integer unreadCount
+        Integer unreadCount,
+        List<ChatMessageResponse> pinnedMessages
 ) {
 }

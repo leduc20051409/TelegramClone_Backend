@@ -8,6 +8,12 @@ import com.leanhduc.telegramclone.dto.conversation.ConversationResponse;
 import com.leanhduc.telegramclone.service.conversation.IConversationService;
 import com.leanhduc.telegramclone.service.message.IMessageService;
 import com.leanhduc.telegramclone.dto.message.ChannelViewsRequest;
+import com.leanhduc.telegramclone.dto.message.ChatMessageResponse;
+import com.leanhduc.telegramclone.dto.websocket.WsEnvelope;
+import com.leanhduc.telegramclone.dto.websocket.UnpinMessageResponse;
+import com.leanhduc.telegramclone.dto.message.PinMessageResult;
+import com.leanhduc.telegramclone.model.enums.ConversationType;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -24,6 +30,7 @@ public class ConversationController {
 
     private final IConversationService conversationService;
     private final IMessageService messageService;
+    private final SimpMessagingTemplate messagingTemplate;
 
     @PostMapping("/private/{targetUserId}")
     public ResponseEntity<ConversationResponse> getOrCreatePrivateChat(
@@ -149,5 +156,73 @@ public class ConversationController {
         UUID userId = UUID.fromString(principal.getName());
         messageService.incrementViews(userId, conversationId, request.messageIds());
         return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("/{conversationId}/pin/{messageId}")
+    public ResponseEntity<ChatMessageResponse> pinMessage(
+            @PathVariable UUID conversationId,
+            @PathVariable Long messageId,
+            Principal principal
+    ) {
+        UUID userId = UUID.fromString(principal.getName());
+        PinMessageResult result = messageService.pinMessage(userId, conversationId, messageId);
+        ChatMessageResponse pinnedResponse = result.pinnedMessage();
+        ChatMessageResponse systemResponse = result.systemMessage();
+
+        ConversationType type = conversationService.getConversationType(conversationId);
+        List<UUID> memberIds = conversationService.getConversationMemberIds(conversationId);
+
+        // 1. Broadcast the Pinned Message update (MESSAGE_PINNED)
+        WsEnvelope<ChatMessageResponse> pinEnvelope = WsEnvelope.of("MESSAGE_PINNED", pinnedResponse);
+        for (UUID memberId : memberIds) {
+            messagingTemplate.convertAndSendToUser(
+                    memberId.toString(),
+                    "/queue/chat",
+                    pinEnvelope
+            );
+        }
+
+        // 2. Broadcast the SYSTEM notification message (NEW_MESSAGE)
+        WsEnvelope<ChatMessageResponse> sysEnvelope = WsEnvelope.of("NEW_MESSAGE", systemResponse);
+        if (type == ConversationType.CHANNEL && memberIds.size() > 1000) {
+            messagingTemplate.convertAndSend(
+                    "/topic/channels/" + conversationId,
+                    sysEnvelope
+            );
+        } else {
+            for (UUID memberId : memberIds) {
+                messagingTemplate.convertAndSendToUser(
+                        memberId.toString(),
+                        "/queue/chat",
+                        sysEnvelope
+                );
+            }
+        }
+
+        return ResponseEntity.ok(pinnedResponse);
+    }
+
+    @DeleteMapping("/{conversationId}/unpin/{messageId}")
+    public ResponseEntity<Void> unpinMessage(
+            @PathVariable UUID conversationId,
+            @PathVariable Long messageId,
+            Principal principal
+    ) {
+        UUID userId = UUID.fromString(principal.getName());
+        messageService.unpinMessage(userId, conversationId, messageId);
+
+        // Broadcast to WebSocket members
+        UnpinMessageResponse payload = new UnpinMessageResponse(messageId, conversationId);
+        WsEnvelope<UnpinMessageResponse> envelope = WsEnvelope.of("MESSAGE_UNPINNED", payload);
+        List<UUID> memberIds = conversationService.getConversationMemberIds(conversationId);
+        for (UUID memberId : memberIds) {
+            messagingTemplate.convertAndSendToUser(
+                    memberId.toString(),
+                    "/queue/chat",
+                    envelope
+            );
+        }
+
+        return ResponseEntity.noContent().build();
     }
 }

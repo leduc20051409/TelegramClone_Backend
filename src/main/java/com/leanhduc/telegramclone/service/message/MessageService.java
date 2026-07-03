@@ -4,6 +4,7 @@ import com.leanhduc.telegramclone.dto.message.ChatMessageRequest;
 import com.leanhduc.telegramclone.dto.message.ChatMessageResponse;
 import com.leanhduc.telegramclone.dto.message.ChatReadRequest;
 import com.leanhduc.telegramclone.dto.message.EditMessageRequest;
+import com.leanhduc.telegramclone.dto.message.PinMessageResult;
 import com.leanhduc.telegramclone.dto.media.MediaAttachmentDto;
 import com.leanhduc.telegramclone.exception.BusinessException;
 import com.leanhduc.telegramclone.exception.ErrorCode;
@@ -45,6 +46,7 @@ public class MessageService implements IMessageService {
     private final MessageMapper messageMapper;
     private final MessagePostViewRepository messagePostViewRepository;
     private final RedisTemplate<String, String> redisTemplate;
+    private final PinnedMessageRepository pinnedMessageRepository;
 
     @Override
     @Transactional
@@ -335,5 +337,111 @@ public class MessageService implements IMessageService {
                 }
             }
         }
+    }
+
+    @Override
+    @Transactional
+    public PinMessageResult pinMessage(UUID userId, UUID conversationId, Long messageId) {
+        ConversationMember member = memberRepository.findById(new ConversationMemberId(conversationId, userId))
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_IN_CONVERSATION));
+        if (member.getLeftAt() != null) {
+            throw new BusinessException(ErrorCode.NOT_IN_CONVERSATION);
+        }
+
+        Conversation conversation = conversationRepository.findById(conversationId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.CONVERSATION_NOT_FOUND));
+
+        if (conversation.getType() == ConversationType.GROUP || conversation.getType() == ConversationType.CHANNEL) {
+            if (member.getRole() != ConversationRole.OWNER && member.getRole() != ConversationRole.ADMIN) {
+                throw new BusinessException(ErrorCode.UNAUTHORIZED_MESSAGE_ACTION);
+            }
+        }
+
+        Message message = messageRepository.findById(messageId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.MESSAGE_NOT_FOUND));
+
+        if (!message.getConversation().getId().equals(conversationId)) {
+            throw new BusinessException(ErrorCode.MESSAGE_NOT_FOUND);
+        }
+
+        PinnedMessageId pinnedId = new PinnedMessageId(conversationId, messageId);
+        PinnedMessage pinnedMessage = PinnedMessage.builder()
+                .id(pinnedId)
+                .conversation(conversation)
+                .message(message)
+                .pinnedBy(userId)
+                .build();
+
+        pinnedMessageRepository.save(pinnedMessage);
+
+        // 1. Map the pinned message
+        ChatMessageResponse pinnedMessageResponse = toResponsesWithMedia(List.of(message)).get(0);
+
+        // 2. Create the SYSTEM notification message
+        User pinner = userRepository.findById(userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+
+        String previewText = "";
+        if (message.getBody() != null && !message.getBody().isEmpty()) {
+            previewText = message.getBody();
+        }
+
+        List<MessageMedia> messageMediaList = messageMediaRepository.findByMessageIdInWithMedia(List.of(messageId));
+        if (!messageMediaList.isEmpty()) {
+            String prefix = messageMediaList.get(0).getMedia().getMimeType().startsWith("image/") ? "Photo" : "File";
+            if (!previewText.isEmpty()) {
+                previewText = prefix + ", " + previewText;
+            } else {
+                previewText = prefix;
+            }
+        }
+
+        if (previewText.length() > 60) {
+            previewText = previewText.substring(0, 57) + "...";
+        }
+
+        String displayName = conversation.getType() == ConversationType.CHANNEL ?
+                conversation.getTitle() :
+                (pinner.getDisplayName() != null ? pinner.getDisplayName() : pinner.getUsername());
+
+        String systemBody = displayName + " pinned \"" + previewText + "\"";
+
+        Message systemMessage = Message.builder()
+                .conversation(conversation)
+                .sender(pinner)
+                .messageType(MessageType.SYSTEM)
+                .body(systemBody)
+                .build();
+
+        Message savedSystemMsg = messageRepository.save(systemMessage);
+        ChatMessageResponse systemMessageResponse = toResponsesWithMedia(List.of(savedSystemMsg)).get(0);
+
+        return new PinMessageResult(pinnedMessageResponse, systemMessageResponse);
+    }
+
+    @Override
+    @Transactional
+    public void unpinMessage(UUID userId, UUID conversationId, Long messageId) {
+        ConversationMember member = memberRepository.findById(new ConversationMemberId(conversationId, userId))
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_IN_CONVERSATION));
+        if (member.getLeftAt() != null) {
+            throw new BusinessException(ErrorCode.NOT_IN_CONVERSATION);
+        }
+
+        Conversation conversation = conversationRepository.findById(conversationId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.CONVERSATION_NOT_FOUND));
+
+        if (conversation.getType() == ConversationType.GROUP || conversation.getType() == ConversationType.CHANNEL) {
+            if (member.getRole() != ConversationRole.OWNER && member.getRole() != ConversationRole.ADMIN) {
+                throw new BusinessException(ErrorCode.UNAUTHORIZED_MESSAGE_ACTION);
+            }
+        }
+
+        PinnedMessageId pinnedId = new PinnedMessageId(conversationId, messageId);
+        if (!pinnedMessageRepository.existsById(pinnedId)) {
+            throw new BusinessException(ErrorCode.MESSAGE_NOT_FOUND);
+        }
+
+        pinnedMessageRepository.deleteById(pinnedId);
     }
 }

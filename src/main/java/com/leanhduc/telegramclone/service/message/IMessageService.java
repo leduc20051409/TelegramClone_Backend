@@ -9,6 +9,8 @@ import com.leanhduc.telegramclone.dto.message.EditMessageRequest;
 import java.util.List;
 import java.util.UUID;
 
+import com.leanhduc.telegramclone.dto.message.PinMessageResult;
+
 public interface IMessageService {
     ChatMessageResponse saveMessage(UUID senderId, ChatMessageRequest request);
 
@@ -21,4 +23,8 @@ public interface IMessageService {
     UUID deleteMessage(UUID currentUserId, Long messageId);
 
     void incrementViews(UUID userId, UUID conversationId, List<Long> messageIds);
+
+    PinMessageResult pinMessage(UUID userId, UUID conversationId, Long messageId);
+
+    void unpinMessage(UUID userId, UUID conversationId, Long messageId);
 }

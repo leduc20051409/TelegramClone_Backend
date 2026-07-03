@@ -15,6 +15,10 @@ import com.leanhduc.telegramclone.repository.ConversationRepository;
 import com.leanhduc.telegramclone.repository.UserRepository;
 import com.leanhduc.telegramclone.repository.UnreadCounterRepository;
 import com.leanhduc.telegramclone.model.UnreadCounterId;
+import com.leanhduc.telegramclone.model.PinnedMessage;
+import com.leanhduc.telegramclone.repository.PinnedMessageRepository;
+import com.leanhduc.telegramclone.mapper.MessageMapper;
+import com.leanhduc.telegramclone.dto.message.ChatMessageResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,6 +32,15 @@ import com.leanhduc.telegramclone.repository.MessageRepository;
 import org.springframework.data.domain.PageRequest;
 import java.util.Optional;
 import java.util.UUID;
+import com.leanhduc.telegramclone.repository.MessageMediaRepository;
+import com.leanhduc.telegramclone.repository.MessagePostViewRepository;
+import com.leanhduc.telegramclone.model.MessageMedia;
+import com.leanhduc.telegramclone.model.MessagePostView;
+import com.leanhduc.telegramclone.dto.media.MediaAttachmentDto;
+import java.util.Map;
+import java.util.HashMap;
+import java.util.ArrayList;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -40,6 +53,10 @@ public class ConversationService implements IConversationService {
     private final MediaRepository mediaRepository;
     private final UnreadCounterRepository unreadCounterRepository;
     private final ConversationMapper conversationMapper;
+    private final PinnedMessageRepository pinnedMessageRepository;
+    private final MessageMapper messageMapper;
+    private final MessageMediaRepository messageMediaRepository;
+    private final MessagePostViewRepository messagePostViewRepository;
 
     @Override
     @Transactional
@@ -93,7 +110,8 @@ public class ConversationService implements IConversationService {
                     null,
                     participants,
                     lastMsg != null && lastMsg.getSender() != null ? lastMsg.getSender().getId() : null,
-                    unreadCount
+                    unreadCount,
+                    getPinnedMessagesForConversation(conv.getId())
             );
         }
 
@@ -134,7 +152,8 @@ public class ConversationService implements IConversationService {
                 null,
                 participants,
                 null,
-                0
+                0,
+                List.of()
         );
     }
 
@@ -207,7 +226,8 @@ public class ConversationService implements IConversationService {
                             conv.getDescription(),
                             participants,
                             lastMsg != null && lastMsg.getSender() != null ? lastMsg.getSender().getId() : null,
-                            unreadCount
+                            unreadCount,
+                            getPinnedMessagesForConversation(conv.getId())
                     );
                 })
                 .toList();
@@ -293,7 +313,8 @@ public class ConversationService implements IConversationService {
                 conversation.getDescription(),
                 participants,
                 null,
-                0
+                0,
+                List.of()
         );
     }
 
@@ -425,7 +446,8 @@ public class ConversationService implements IConversationService {
                 conversation.getDescription(),
                 participants,
                 null,
-                0
+                0,
+                getPinnedMessagesForConversation(conversation.getId())
         );
     }
 
@@ -500,7 +522,8 @@ public class ConversationService implements IConversationService {
                 conversation.getDescription(),
                 participants,
                 null,
-                0
+                0,
+                getPinnedMessagesForConversation(conversation.getId())
         );
     }
 
@@ -638,5 +661,53 @@ public class ConversationService implements IConversationService {
 
         // 2. Delete the conversation itself
         conversationRepository.deleteById(conversationId);
+    }
+
+    private List<ChatMessageResponse> getPinnedMessagesForConversation(UUID conversationId) {
+        List<PinnedMessage> pinned = pinnedMessageRepository.findAllByConversationIdOrderByPinnedAtDesc(conversationId);
+        if (pinned.isEmpty()) {
+            return List.of();
+        }
+        List<Message> messages = pinned.stream()
+                .map(PinnedMessage::getMessage)
+                .toList();
+        List<Long> messageIds = messages.stream()
+                .map(Message::getId)
+                .toList();
+
+        List<MessageMedia> messageMediaList = messageMediaRepository.findByMessageIdInWithMedia(messageIds);
+        Map<Long, List<MessageMedia>> mediaByMessageId = new HashMap<>();
+        for (MessageMedia messageMedia : messageMediaList) {
+            mediaByMessageId
+                    .computeIfAbsent(messageMedia.getMessage().getId(), key -> new ArrayList<>())
+                    .add(messageMedia);
+        }
+
+        Conversation conversation = conversationRepository.findById(conversationId).orElse(null);
+        boolean isChannel = conversation != null && conversation.getType() == ConversationType.CHANNEL;
+        Map<Long, Long> viewCountByMessageId = new HashMap<>();
+        if (isChannel) {
+            List<MessagePostView> postViews = messagePostViewRepository.findAllById(messageIds);
+            viewCountByMessageId = postViews.stream()
+                    .collect(Collectors.toMap(MessagePostView::getMessageId, MessagePostView::getViewCount));
+        }
+
+        List<ChatMessageResponse> responses = new ArrayList<>(messages.size());
+        for (Message message : messages) {
+            List<MessageMedia> attachments = mediaByMessageId.getOrDefault(message.getId(), List.of());
+            List<MediaAttachmentDto> mediaDtos = attachments.stream()
+                    .map(MessageMedia::getMedia)
+                    .map(m -> new MediaAttachmentDto(
+                            m.getId(),
+                            m.getUrl(),
+                            m.getMimeType(),
+                            m.getFileName(),
+                            m.getFileSize() == null ? 0L : m.getFileSize()
+                    ))
+                    .toList();
+            Long viewCount = isChannel ? viewCountByMessageId.getOrDefault(message.getId(), 0L) : null;
+            responses.add(messageMapper.toResponse(message, mediaDtos, viewCount));
+        }
+        return responses;
     }
 }
