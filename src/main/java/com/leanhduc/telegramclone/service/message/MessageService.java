@@ -19,6 +19,8 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.data.redis.core.RedisTemplate;
+import java.util.concurrent.TimeUnit;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -42,6 +44,7 @@ public class MessageService implements IMessageService {
     private final MessageMediaRepository messageMediaRepository;
     private final MessageMapper messageMapper;
     private final MessagePostViewRepository messagePostViewRepository;
+    private final RedisTemplate<String, String> redisTemplate;
 
     @Override
     @Transactional
@@ -323,7 +326,13 @@ public class MessageService implements IMessageService {
         List<Message> messages = messageRepository.findAllById(messageIds);
         for (Message message : messages) {
             if (message.getConversation().getId().equals(conversationId)) {
-                messagePostViewRepository.incrementViewCount(message.getId());
+                String key = "message:views:" + message.getId();
+                Boolean alreadyViewed = redisTemplate.opsForSet().isMember(key, userId.toString());
+                if (Boolean.FALSE.equals(alreadyViewed)) {
+                    redisTemplate.opsForSet().add(key, userId.toString());
+                    redisTemplate.expire(key, 30, TimeUnit.DAYS);
+                    messagePostViewRepository.incrementViewCount(message.getId());
+                }
             }
         }
     }

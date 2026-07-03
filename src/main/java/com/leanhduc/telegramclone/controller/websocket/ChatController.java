@@ -34,7 +34,19 @@ public class ChatController {
         UUID senderId = UUID.fromString(principal.getName());
         ChatMessageResponse savedMessage = messageService.saveMessage(senderId, request);
         WsEnvelope<ChatMessageResponse> envelope = WsEnvelope.of("NEW_MESSAGE", savedMessage);
-        List<UUID> memberIds = conversationService.getConversationMemberIds(request.conversationId());
+        
+        UUID conversationId = request.conversationId();
+        ConversationType type = conversationService.getConversationType(conversationId);
+        List<UUID> memberIds = conversationService.getConversationMemberIds(conversationId);
+        
+        if (type == ConversationType.CHANNEL && memberIds.size() > 1000) {
+            messagingTemplate.convertAndSend(
+                    "/topic/channels/" + conversationId,
+                    envelope
+            );
+            return;
+        }
+        
         for (UUID memberId : memberIds) {
             messagingTemplate.convertAndSendToUser(
                     memberId.toString(),
