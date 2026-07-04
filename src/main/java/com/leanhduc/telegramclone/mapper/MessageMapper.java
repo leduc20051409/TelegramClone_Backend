@@ -17,6 +17,7 @@ public interface MessageMapper {
     @Mapping(target = "media", ignore = true)
     @Mapping(target = "viewCount", ignore = true)
     @Mapping(target = "replyTo", expression = "java(mapReplyTo(message.getReplyTo()))")
+    @Mapping(target = "reactions", expression = "java(mapReactions(message.getReactions()))")
     ChatMessageResponse toResponse(Message message);
 
     default ReplyToDto mapReplyTo(Message replyTo) {
@@ -29,6 +30,26 @@ public interface MessageMapper {
             }
         }
         return new ReplyToDto(replyTo.getId(), senderName, replyTo.getBody());
+    }
+
+    default List<com.leanhduc.telegramclone.dto.message.MessageReactionDto> mapReactions(List<com.leanhduc.telegramclone.model.MessageReaction> reactions) {
+        if (reactions == null) return List.of();
+        return reactions.stream()
+                .map(r -> {
+                    String username = "Unknown";
+                    String displayName = null;
+                    if (r.getUser() != null) {
+                        username = r.getUser().getUsername();
+                        displayName = r.getUser().getDisplayName();
+                    }
+                    return new com.leanhduc.telegramclone.dto.message.MessageReactionDto(
+                            r.getId().getUserId(),
+                            username,
+                            displayName,
+                            r.getId().getReaction()
+                    );
+                })
+                .collect(java.util.stream.Collectors.toList());
     }
 
     default ChatMessageResponse toResponse(Message message, List<MediaAttachmentDto> media) {
@@ -48,7 +69,8 @@ public interface MessageMapper {
                 base.updatedAt(),
                 viewCount,
                 base.messageType(),
-                base.replyTo()
+                base.replyTo(),
+                base.reactions()
         );
     }
 }
