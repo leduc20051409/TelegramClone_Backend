@@ -2,6 +2,7 @@ package com.leanhduc.telegramclone.mapper;
 
 import com.leanhduc.telegramclone.dto.media.MediaAttachmentDto;
 import com.leanhduc.telegramclone.dto.message.ChatMessageResponse;
+import com.leanhduc.telegramclone.dto.message.ReplyToDto;
 import com.leanhduc.telegramclone.model.Message;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
@@ -15,7 +16,20 @@ public interface MessageMapper {
     @Mapping(source = "body", target = "message")
     @Mapping(target = "media", ignore = true)
     @Mapping(target = "viewCount", ignore = true)
+    @Mapping(target = "replyTo", expression = "java(mapReplyTo(message.getReplyTo()))")
     ChatMessageResponse toResponse(Message message);
+
+    default ReplyToDto mapReplyTo(Message replyTo) {
+        if (replyTo == null) return null;
+        String senderName = "Unknown";
+        if (replyTo.getSender() != null) {
+            senderName = replyTo.getSender().getDisplayName();
+            if (senderName == null || senderName.isBlank()) {
+                senderName = replyTo.getSender().getUsername();
+            }
+        }
+        return new ReplyToDto(senderName, replyTo.getBody());
+    }
 
     default ChatMessageResponse toResponse(Message message, List<MediaAttachmentDto> media) {
         return toResponse(message, media, null);
@@ -33,7 +47,8 @@ public interface MessageMapper {
                 base.edited(),
                 base.updatedAt(),
                 viewCount,
-                base.messageType()
+                base.messageType(),
+                base.replyTo()
         );
     }
 }

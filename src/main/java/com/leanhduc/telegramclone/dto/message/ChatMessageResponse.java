@@ -16,6 +16,7 @@ public record ChatMessageResponse(
         boolean edited,
         Instant updatedAt,
         Long viewCount,
-        String messageType
+        String messageType,
+        ReplyToDto replyTo
 ) {
 }

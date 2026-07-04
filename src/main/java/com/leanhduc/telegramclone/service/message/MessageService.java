@@ -84,12 +84,18 @@ public class MessageService implements IMessageService {
             mediaById = mediaList.stream().collect(Collectors.toMap(Media::getId, media -> media));
         }
 
+        Message replyTo = null;
+        if (request.replyToMessageId() != null) {
+            replyTo = messageRepository.findById(request.replyToMessageId()).orElse(null);
+        }
+
         Message message = Message.builder()
                 .conversation(conversation)
                 .sender(sender)
                 .body(request.message())
                 .messageType(messageType)
                 .deleted(false)
+                .replyTo(replyTo)
                 .build();
 
         message = messageRepository.save(message);
