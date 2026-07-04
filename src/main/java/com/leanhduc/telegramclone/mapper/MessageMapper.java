@@ -28,7 +28,7 @@ public interface MessageMapper {
                 senderName = replyTo.getSender().getUsername();
             }
         }
-        return new ReplyToDto(senderName, replyTo.getBody());
+        return new ReplyToDto(replyTo.getId(), senderName, replyTo.getBody());
     }
 
     default ChatMessageResponse toResponse(Message message, List<MediaAttachmentDto> media) {
