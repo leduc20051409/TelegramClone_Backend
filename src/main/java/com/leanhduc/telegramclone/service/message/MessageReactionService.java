@@ -41,39 +41,32 @@ public class MessageReactionService implements IMessageReactionService {
             throw new BusinessException(ErrorCode.NOT_IN_CONVERSATION);
         }
 
-        // Fetch all existing reactions by this user on this message
-        List<MessageReaction> userReactions = reactionRepository.findByIdMessageIdAndIdUserId(messageId, userId);
+        // Find existing reaction by this user on this message inside the collection
+        MessageReaction existingReaction = message.getReactions().stream()
+                .filter(r -> r.getUser().getId().equals(userId))
+                .findFirst()
+                .orElse(null);
 
-        boolean alreadyHasSame = false;
-        for (MessageReaction existing : userReactions) {
-            if (existing.getId().getReaction().equals(reaction)) {
-                alreadyHasSame = true;
-                break;
-            }
+        if (existingReaction != null) {
+            // Remove the old reaction from collection
+            message.getReactions().remove(existingReaction);
         }
 
-        // Remove all previous reactions for this user on this message
-        if (!userReactions.isEmpty()) {
-            reactionRepository.deleteAll(userReactions);
-            message.getReactions().removeAll(userReactions);
-        }
-
-        if (!alreadyHasSame) {
+        // If it's a new reaction or a different emoji, add the new one
+        if (existingReaction == null || !existingReaction.getId().getReaction().equals(reaction)) {
             User user = userRepository.findById(userId)
                     .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
 
             MessageReactionId reactionId = new MessageReactionId(messageId, userId, reaction);
-            MessageReaction messageReaction = MessageReaction.builder()
+            MessageReaction newReaction = MessageReaction.builder()
                     .id(reactionId)
                     .message(message)
                     .user(user)
                     .build();
-
-            reactionRepository.save(messageReaction);
-            message.getReactions().add(messageReaction);
+            message.getReactions().add(newReaction);
         }
 
-        reactionRepository.flush();
+        messageRepository.saveAndFlush(message);
 
         return new ToggleReactionResult(conversationId, messageMapper.mapReactions(message.getReactions()));
     }
