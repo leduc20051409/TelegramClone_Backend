@@ -35,7 +35,15 @@ public enum ErrorCode {
     DELETE_MEDIA_FAILED("Failed to delete media", HttpStatus.INTERNAL_SERVER_ERROR),
     MESSAGE_NOT_FOUND("Message not found", HttpStatus.NOT_FOUND),
     UNAUTHORIZED_MESSAGE_ACTION("You can only modify or delete your own messages", HttpStatus.FORBIDDEN),
-    SUBSCRIBERS_CANNOT_POST("Subscribers cannot post in a channel", HttpStatus.FORBIDDEN);
+    SUBSCRIBERS_CANNOT_POST("Subscribers cannot post in a channel", HttpStatus.FORBIDDEN),
+
+    // ================= INVITE LINK =================
+    INVITE_LINK_NOT_FOUND("Invite link not found", HttpStatus.NOT_FOUND),
+    INVITE_LINK_EXPIRED("Invite link has expired", HttpStatus.GONE),
+    INVITE_LINK_LIMIT_REACHED("Invite link limit has been reached", HttpStatus.GONE),
+    INVITE_LINK_REVOKED("Invite link has been revoked", HttpStatus.GONE),
+    ALREADY_IN_CONVERSATION("User is already a member of this conversation", HttpStatus.CONFLICT),
+    ADMIN_REQUIRED("Only conversation owners or admins can perform this action", HttpStatus.FORBIDDEN);
 
     private final String message;
     private final HttpStatus status;

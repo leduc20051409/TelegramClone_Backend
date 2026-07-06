@@ -160,22 +160,30 @@ alter table pinned_messages
   add constraint pinned_messages_message_fkey foreign key (message_id) references messages (id),  
   add constraint pinned_messages_by_fkey foreign key (pinned_by) references users (id);  
   
--- conversation_invitations  
-create table conversation_invitations (  
-  id int8 primary key generated always as identity,  
-  conversation_id uuid,  
-  invited_by uuid,  
-  invited_user_id uuid,  
-  invite_code text,  
-  status text,  
+-- conversation_invite_links  
+create table conversation_invite_links (  
+  id bigserial primary key,  
+  conversation_id uuid not null references conversations(id) on delete cascade,  
+  created_by uuid not null references users(id),  
+  
+  invite_code text not null unique,  
+  name text,  
+  
+  expire_at timestamptz,  
+  member_limit int default 0,  
+  current_uses int default 0,  
+  
+  is_revoked boolean default false,  
+  is_primary boolean default false,  
+  
   created_at timestamptz default now(),  
-  responded_at timestamptz  
+  updated_at timestamptz default now()  
 );  
-create index idx_conversation_invitations_conv on conversation_invitations (conversation_id);  
-alter table conversation_invitations  
-  add constraint conversation_invitations_conv_fkey foreign key (conversation_id) references conversations (id),  
-  add constraint conversation_invitations_inviter_fkey foreign key (invited_by) references users (id),  
-  add constraint conversation_invitations_invited_fkey foreign key (invited_user_id) references users (id);  
+  
+create unique index idx_invite_code on conversation_invite_links(invite_code);  
+create index idx_conversation_invite_links on conversation_invite_links(conversation_id);  
+create index idx_invite_links_primary on conversation_invite_links(conversation_id, is_primary);  
+
   
 -- unread_counters simplified: only last_read message per user per conversation  
 create table unread_counters (  
