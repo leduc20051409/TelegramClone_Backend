@@ -11,4 +11,5 @@ public class UpdateConversationRequest {
     private String title;
     private String description;
     private UUID avatarMediaId;
+    private Boolean clearAvatar;
 }

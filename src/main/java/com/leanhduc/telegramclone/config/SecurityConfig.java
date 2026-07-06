@@ -34,6 +34,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.POST, "/api/auth/logout-all").authenticated()
                         .requestMatchers("/api/auth/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/invite/*").permitAll()
                         .requestMatchers("/ws/**").permitAll()
                         .requestMatchers("/v3/api-docs/**",
                                 "/swagger-ui/**",

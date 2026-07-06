@@ -8,5 +8,6 @@ public record InviteLinkInfoResponse(
         String title,
         String description,
         String avatarUrl,
-        Integer memberCount
+        Integer memberCount,
+        String type
 ) {}

@@ -108,7 +108,8 @@ public class ConversationInviteLinkService implements IConversationInviteLinkSer
                 conversation.getTitle(),
                 conversation.getDescription(),
                 avatarUrl,
-                memberCount
+                memberCount,
+                conversation.getType().name()
         );
     }
 
@@ -183,10 +184,23 @@ public class ConversationInviteLinkService implements IConversationInviteLinkSer
 
     @Override
     public List<InviteLinkResponse> getInviteLinksForConversation(UUID requesterId, UUID conversationId) {
-        // Check if requester is owner/admin
-        checkAdminOrOwnerPermission(requesterId, conversationId);
+        // Verify requester is in the conversation and active
+        ConversationMember member = memberRepository.findById(new ConversationMemberId(conversationId, requesterId))
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_IN_CONVERSATION));
+        if (member.getLeftAt() != null) {
+            throw new BusinessException(ErrorCode.NOT_IN_CONVERSATION);
+        }
 
         List<ConversationInviteLink> links = inviteLinkRepository.findAllByConversationIdAndIsRevokedFalse(conversationId);
+
+        // If requester is not owner/admin, only return the primary link(s)
+        if (member.getRole() != ConversationRole.OWNER && member.getRole() != ConversationRole.ADMIN) {
+            return links.stream()
+                    .filter(ConversationInviteLink::isPrimary)
+                    .map(inviteLinkMapper::toResponse)
+                    .toList();
+        }
+
         return links.stream()
                 .map(inviteLinkMapper::toResponse)
                 .toList();

@@ -16,7 +16,6 @@ import com.leanhduc.telegramclone.model.enums.ConversationType;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.security.Principal;
@@ -100,6 +99,27 @@ public class ConversationController {
     ) {
         UUID requesterId = UUID.fromString(principal.getName());
         ConversationResponse response = conversationService.updateConversation(requesterId, conversationId, request);
+
+        // Broadcast the update to all members of the conversation in real-time
+        WsEnvelope<ConversationResponse> envelope = WsEnvelope.of("CONVERSATION_UPDATED", response);
+        ConversationType type = conversationService.getConversationType(conversationId);
+        List<UUID> memberIds = conversationService.getConversationMemberIds(conversationId);
+
+        if (type == ConversationType.CHANNEL && memberIds.size() > 1000) {
+            messagingTemplate.convertAndSend(
+                    "/topic/channels/" + conversationId,
+                    envelope
+            );
+        } else {
+            for (UUID memberId : memberIds) {
+                messagingTemplate.convertAndSendToUser(
+                        memberId.toString(),
+                        "/queue/chat",
+                        envelope
+                );
+            }
+        }
+
         return ResponseEntity.ok(response);
     }
 

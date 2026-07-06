@@ -22,6 +22,8 @@ public enum ErrorCode {
     CANNOT_CHAT_WITH_YOURSELF("Cannot create a conversation with yourself", HttpStatus.BAD_REQUEST),
     CONVERSATION_NOT_FOUND("Conversation not found", HttpStatus.NOT_FOUND),
     NOT_IN_CONVERSATION("You are not a member of this conversation", HttpStatus.FORBIDDEN),
+    INVALID_CONVERSATION_TITLE("Conversation title must be between 1 and 100 characters", HttpStatus.BAD_REQUEST),
+    INVALID_CONVERSATION_DESCRIPTION("Conversation description must not exceed 1000 characters", HttpStatus.BAD_REQUEST),
 
     // ================= FILE / MEDIA =================
     INVALID_FILE("Invalid file", HttpStatus.BAD_REQUEST),

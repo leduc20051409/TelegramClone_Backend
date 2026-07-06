@@ -471,16 +471,31 @@ public class ConversationService implements IConversationService {
         // Requester must be OWNER or ADMIN to edit details
         if (requesterMember.getRole() != ConversationRole.OWNER &&
                 requesterMember.getRole() != ConversationRole.ADMIN) {
-            throw new BusinessException(ErrorCode.NOT_IN_CONVERSATION);
+            throw new BusinessException(ErrorCode.ADMIN_REQUIRED);
         }
 
-        if (request.getTitle() != null && !request.getTitle().trim().isEmpty()) {
-            conversation.setTitle(request.getTitle());
+        // Validate and trim title
+        if (request.getTitle() != null) {
+            String trimmedTitle = request.getTitle().trim();
+            if (trimmedTitle.isEmpty() || trimmedTitle.length() > 100) {
+                throw new BusinessException(ErrorCode.INVALID_CONVERSATION_TITLE);
+            }
+            conversation.setTitle(trimmedTitle);
         }
+
+        // Validate description
         if (request.getDescription() != null) {
-            conversation.setDescription(request.getDescription());
+            String trimmedDesc = request.getDescription().trim();
+            if (trimmedDesc.length() > 1000) {
+                throw new BusinessException(ErrorCode.INVALID_CONVERSATION_DESCRIPTION);
+            }
+            conversation.setDescription(trimmedDesc);
         }
-        if (request.getAvatarMediaId() != null) {
+
+        // Handle avatar clearing or updating
+        if (request.getClearAvatar() != null && request.getClearAvatar()) {
+            conversation.setAvatarMediaId(null);
+        } else if (request.getAvatarMediaId() != null) {
             conversation.setAvatarMediaId(request.getAvatarMediaId());
         }
 
