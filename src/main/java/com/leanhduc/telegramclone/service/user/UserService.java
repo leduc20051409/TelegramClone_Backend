@@ -7,6 +7,7 @@ import com.leanhduc.telegramclone.exception.NotFoundException;
 import com.leanhduc.telegramclone.mapper.UserMapper;
 import com.leanhduc.telegramclone.model.User;
 import com.leanhduc.telegramclone.repository.UserRepository;
+import com.leanhduc.telegramclone.service.Presence.IPresenceService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -20,6 +21,7 @@ import java.util.UUID;
 public class UserService implements IUserService{
     private final UserRepository userRepository;
     private final UserMapper userMapper;
+    private final IPresenceService presenceService;
 
     @Override
     public UserDto getCurrentUser() {
@@ -28,14 +30,20 @@ public class UserService implements IUserService{
         User user = userRepository.findById(userId).
                 orElseThrow(() -> new NotFoundException("User not found with id: " + userId));
 
-        return userMapper.toDto(user);
+        UserDto dto = userMapper.toDto(user);
+        dto.setOnline(presenceService.isUserOnline(userId));
+        dto.setLastSeen(user.getLastSeen());
+        return dto;
     }
 
     @Override
     public UserSummaryDto getUserById(UUID userId) {
         User user = userRepository.findById(userId).
                 orElseThrow(() -> new NotFoundException("User not found with id: " + userId));
-        return userMapper.toSummaryDto(user);
+        UserSummaryDto dto = userMapper.toSummaryDto(user);
+        dto.setOnline(presenceService.isUserOnline(userId));
+        dto.setLastSeen(user.getLastSeen());
+        return dto;
     }
 
     @Override
@@ -54,7 +62,11 @@ public class UserService implements IUserService{
             user.setAvatarMediaId(request.getAvatarMediaId());
         }
 
-        return userMapper.toDto(userRepository.save(user));
+        User savedUser = userRepository.save(user);
+        UserDto dto = userMapper.toDto(savedUser);
+        dto.setOnline(presenceService.isUserOnline(userId));
+        dto.setLastSeen(savedUser.getLastSeen());
+        return dto;
     }
 
     @Override
@@ -62,6 +74,11 @@ public class UserService implements IUserService{
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         UUID userId = (UUID) auth.getPrincipal();
         Page<User> users = userRepository.searchUsers(query, userId, pageable);
-        return users.map(userMapper::toSummaryDto);
+        return users.map(user -> {
+            UserSummaryDto dto = userMapper.toSummaryDto(user);
+            dto.setOnline(presenceService.isUserOnline(user.getId()));
+            dto.setLastSeen(user.getLastSeen());
+            return dto;
+        });
     }
 }

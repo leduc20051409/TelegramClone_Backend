@@ -27,4 +27,6 @@ public interface IMessageService {
     PinMessageResult pinMessage(UUID userId, UUID conversationId, Long messageId);
 
     void unpinMessage(UUID userId, UUID conversationId, Long messageId);
+
+    List<ChatMessageResponse> searchMessages(UUID conversationId, UUID currentUserId, String query, String dateStr);
 }

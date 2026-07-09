@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -35,5 +36,26 @@ public interface MessageRepository extends JpaRepository<Message, Long> {
             @Param("conversationId") UUID conversationId,
             @Param("userId") UUID userId,
             @Param("lastReadMessageId") Long lastReadMessageId
+    );
+
+    List<Message> findByConversationIdAndDeletedFalseAndBodyContainingIgnoreCaseAndCreatedAtBetweenOrderByIdDesc(
+            UUID conversationId,
+            String query,
+            Instant startDate,
+            Instant endDate,
+            Pageable pageable
+    );
+
+    List<Message> findByConversationIdAndDeletedFalseAndBodyContainingIgnoreCaseOrderByIdDesc(
+            UUID conversationId,
+            String query,
+            Pageable pageable
+    );
+
+    List<Message> findByConversationIdAndDeletedFalseAndCreatedAtBetweenOrderByIdDesc(
+            UUID conversationId,
+            Instant startDate,
+            Instant endDate,
+            Pageable pageable
     );
 }

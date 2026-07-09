@@ -9,6 +9,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -26,4 +27,7 @@ public interface ContactRepository extends JpaRepository<Contact, ContactId> {
             "AND c.blocked = true")
     boolean existsByOwnerIdAndContactIdAndIsBlockedTrue(@Param ("ownerId") UUID ownerId,
                                                         @Param("contactId") UUID contactId);
+
+    @Query("SELECT DISTINCT c.id.ownerId FROM Contact c WHERE c.id.contactId = :contactId AND c.blocked = false")
+    List<UUID> findOwnerIdsByContactIdAndBlockedFalse(@Param("contactId") UUID contactId);
 }

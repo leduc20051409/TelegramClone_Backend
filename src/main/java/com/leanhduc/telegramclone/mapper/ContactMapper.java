@@ -14,5 +14,7 @@ public interface ContactMapper {
     @Mapping(source = "contact.username", target = "username")
     @Mapping(source = "contact.displayName", target = "displayName")
     @Mapping(source = "createdAt", target = "addedAt")
+    @Mapping(source = "contact.lastSeen", target = "lastSeen")
+    @Mapping(target = "online", ignore = true)
     ContactResponse toResponse(Contact contact);
 }

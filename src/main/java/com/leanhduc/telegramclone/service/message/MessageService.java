@@ -450,4 +450,62 @@ public class MessageService implements IMessageService {
 
         pinnedMessageRepository.deleteById(pinnedId);
     }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<ChatMessageResponse> searchMessages(UUID conversationId, UUID currentUserId, String query, String dateStr) {
+        boolean isMember = memberRepository.existsByConversationIdAndUserIdAndLeftAtIsNull(conversationId, currentUserId);
+        if (!isMember) {
+            throw new BusinessException(ErrorCode.NOT_IN_CONVERSATION);
+        }
+
+        java.time.Instant startDate = null;
+        java.time.Instant endDate = null;
+        if (dateStr != null && !dateStr.isBlank()) {
+            try {
+                java.time.LocalDate localDate = java.time.LocalDate.parse(dateStr);
+                startDate = localDate.atStartOfDay(java.time.ZoneOffset.UTC).toInstant();
+                endDate = localDate.plusDays(1).atStartOfDay(java.time.ZoneOffset.UTC).toInstant();
+            } catch (Exception e) {
+                // Ignore invalid date format
+            }
+        }
+
+        String searchPattern = null;
+        if (query != null && !query.isBlank()) {
+            searchPattern = query.trim();
+        }
+
+        if (searchPattern == null && startDate == null) {
+            return List.of();
+        }
+
+        List<Message> messages;
+        if (searchPattern != null && startDate != null) {
+            messages = messageRepository.findByConversationIdAndDeletedFalseAndBodyContainingIgnoreCaseAndCreatedAtBetweenOrderByIdDesc(
+                    conversationId,
+                    searchPattern,
+                    startDate,
+                    endDate,
+                    PageRequest.of(0, 100)
+            );
+        } else if (searchPattern != null) {
+            messages = messageRepository.findByConversationIdAndDeletedFalseAndBodyContainingIgnoreCaseOrderByIdDesc(
+                    conversationId,
+                    searchPattern,
+                    PageRequest.of(0, 100)
+            );
+        } else if (startDate != null) {
+            messages = messageRepository.findByConversationIdAndDeletedFalseAndCreatedAtBetweenOrderByIdDesc(
+                    conversationId,
+                    startDate,
+                    endDate,
+                    PageRequest.of(0, 100)
+            );
+        } else {
+            messages = List.of();
+        }
+
+        return toResponsesWithMedia(messages);
+    }
 }

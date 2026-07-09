@@ -10,4 +10,6 @@ public class UserSummaryDto {
     private String username;
     private String displayName;
     private String avatarUrl;
+    private boolean online;
+    private java.time.Instant lastSeen;
 }

@@ -4,18 +4,13 @@ import com.leanhduc.telegramclone.dto.conversation.ConversationResponse;
 import com.leanhduc.telegramclone.exception.BusinessException;
 import com.leanhduc.telegramclone.exception.ErrorCode;
 import com.leanhduc.telegramclone.mapper.ConversationMapper;
-import com.leanhduc.telegramclone.model.Conversation;
-import com.leanhduc.telegramclone.model.ConversationMember;
-import com.leanhduc.telegramclone.model.ConversationMemberId;
-import com.leanhduc.telegramclone.model.User;
+import com.leanhduc.telegramclone.model.*;
 import com.leanhduc.telegramclone.model.enums.ConversationRole;
 import com.leanhduc.telegramclone.model.enums.ConversationType;
 import com.leanhduc.telegramclone.repository.ConversationMemberRepository;
 import com.leanhduc.telegramclone.repository.ConversationRepository;
 import com.leanhduc.telegramclone.repository.UserRepository;
 import com.leanhduc.telegramclone.repository.UnreadCounterRepository;
-import com.leanhduc.telegramclone.model.UnreadCounterId;
-import com.leanhduc.telegramclone.model.PinnedMessage;
 import com.leanhduc.telegramclone.repository.PinnedMessageRepository;
 import com.leanhduc.telegramclone.mapper.MessageMapper;
 import com.leanhduc.telegramclone.dto.message.ChatMessageResponse;
@@ -27,16 +22,15 @@ import com.leanhduc.telegramclone.dto.conversation.UpdateConversationRequest;
 import com.leanhduc.telegramclone.dto.user.UserDto;
 import com.leanhduc.telegramclone.repository.MediaRepository;
 import java.util.List;
-import com.leanhduc.telegramclone.model.Message;
+
 import com.leanhduc.telegramclone.repository.MessageRepository;
 import org.springframework.data.domain.PageRequest;
 import java.util.Optional;
 import java.util.UUID;
 import com.leanhduc.telegramclone.repository.MessageMediaRepository;
 import com.leanhduc.telegramclone.repository.MessagePostViewRepository;
-import com.leanhduc.telegramclone.model.MessageMedia;
-import com.leanhduc.telegramclone.model.MessagePostView;
 import com.leanhduc.telegramclone.dto.media.MediaAttachmentDto;
+import com.leanhduc.telegramclone.service.Presence.IPresenceService;
 import java.util.Map;
 import java.util.HashMap;
 import java.util.ArrayList;
@@ -57,6 +51,7 @@ public class ConversationService implements IConversationService {
     private final MessageMapper messageMapper;
     private final MessageMediaRepository messageMediaRepository;
     private final MessagePostViewRepository messagePostViewRepository;
+    private final IPresenceService presenceService;
 
     @Override
     @Transactional
@@ -81,7 +76,7 @@ public class ConversationService implements IConversationService {
             List<UserDto> participants = memberRepository.findByConversationIdAndLeftAtIsNull(conv.getId()).stream()
                     .map(member -> {
                         User u = member.getUser();
-                        return new UserDto(
+                        UserDto dto = new UserDto(
                                 u.getId(),
                                 u.getUsername(),
                                 u.getDisplayName(),
@@ -91,6 +86,9 @@ public class ConversationService implements IConversationService {
                                 u.getRole(),
                                 member.getRole() != null ? member.getRole().name() : null
                         );
+                        dto.setOnline(presenceService.isUserOnline(u.getId()));
+                        dto.setLastSeen(u.getLastSeen());
+                        return dto;
                     })
                     .toList();
             Long lastReadMsgId = unreadCounterRepository.findById(new UnreadCounterId(conv.getId(), currentUserId))
@@ -134,10 +132,15 @@ public class ConversationService implements IConversationService {
                 .build();
         memberRepository.saveAll(List.of(member1, member2));
 
-        List<UserDto> participants = List.of(
-                new UserDto(currentUser.getId(), currentUser.getUsername(), currentUser.getDisplayName(), currentUser.getEmail(), currentUser.getBio(), currentUser.getAvatarMediaId(), currentUser.getRole()),
-                new UserDto(targetUser.getId(), targetUser.getUsername(), targetUser.getDisplayName(), targetUser.getEmail(), targetUser.getBio(), targetUser.getAvatarMediaId(), targetUser.getRole())
-        );
+        UserDto u1 = new UserDto(currentUser.getId(), currentUser.getUsername(), currentUser.getDisplayName(), currentUser.getEmail(), currentUser.getBio(), currentUser.getAvatarMediaId(), currentUser.getRole());
+        u1.setOnline(presenceService.isUserOnline(currentUser.getId()));
+        u1.setLastSeen(currentUser.getLastSeen());
+
+        UserDto u2 = new UserDto(targetUser.getId(), targetUser.getUsername(), targetUser.getDisplayName(), targetUser.getEmail(), targetUser.getBio(), targetUser.getAvatarMediaId(), targetUser.getRole());
+        u2.setOnline(presenceService.isUserOnline(targetUser.getId()));
+        u2.setLastSeen(targetUser.getLastSeen());
+
+        List<UserDto> participants = List.of(u1, u2);
 
         return new ConversationResponse(
                 newConversation.getId(),
@@ -195,7 +198,7 @@ public class ConversationService implements IConversationService {
                     List<UserDto> participants = memberRepository.findByConversationIdAndLeftAtIsNull(conv.getId()).stream()
                             .map(member -> {
                                 User u = member.getUser();
-                                return new UserDto(
+                                UserDto dto = new UserDto(
                                         u.getId(),
                                         u.getUsername(),
                                         u.getDisplayName(),
@@ -205,6 +208,9 @@ public class ConversationService implements IConversationService {
                                         u.getRole(),
                                         member.getRole() != null ? member.getRole().name() : null
                                 );
+                                dto.setOnline(presenceService.isUserOnline(u.getId()));
+                                dto.setLastSeen(u.getLastSeen());
+                                return dto;
                             })
                             .toList();
 
@@ -287,7 +293,7 @@ public class ConversationService implements IConversationService {
         List<UserDto> participants = memberRepository.findByConversationIdAndLeftAtIsNull(conversation.getId()).stream()
                 .map(member -> {
                     User u = member.getUser();
-                    return new UserDto(
+                    UserDto dto = new UserDto(
                             u.getId(),
                             u.getUsername(),
                             u.getDisplayName(),
@@ -297,6 +303,9 @@ public class ConversationService implements IConversationService {
                             u.getRole(),
                             member.getRole() != null ? member.getRole().name() : null
                     );
+                    dto.setOnline(presenceService.isUserOnline(u.getId()));
+                    dto.setLastSeen(u.getLastSeen());
+                    return dto;
                 })
                 .toList();
 
@@ -420,7 +429,7 @@ public class ConversationService implements IConversationService {
         List<UserDto> participants = memberRepository.findByConversationIdAndLeftAtIsNull(conversation.getId()).stream()
                 .map(m -> {
                     User u = m.getUser();
-                    return new UserDto(
+                    UserDto dto = new UserDto(
                             u.getId(),
                             u.getUsername(),
                             u.getDisplayName(),
@@ -430,6 +439,9 @@ public class ConversationService implements IConversationService {
                             u.getRole(),
                             m.getRole() != null ? m.getRole().name() : null
                     );
+                    dto.setOnline(presenceService.isUserOnline(u.getId()));
+                    dto.setLastSeen(u.getLastSeen());
+                    return dto;
                 })
                 .toList();
 
@@ -504,14 +516,14 @@ public class ConversationService implements IConversationService {
         String avatarUrl = null;
         if (conversation.getAvatarMediaId() != null) {
             avatarUrl = mediaRepository.findById(conversation.getAvatarMediaId())
-                    .map(com.leanhduc.telegramclone.model.Media::getUrl)
+                    .map(Media::getUrl)
                     .orElse(null);
         }
 
         List<UserDto> participants = memberRepository.findByConversationIdAndLeftAtIsNull(conversation.getId()).stream()
                 .map(m -> {
                     User u = m.getUser();
-                    return new UserDto(
+                    UserDto dto = new UserDto(
                             u.getId(),
                             u.getUsername(),
                             u.getDisplayName(),
@@ -521,6 +533,9 @@ public class ConversationService implements IConversationService {
                             u.getRole(),
                             m.getRole() != null ? m.getRole().name() : null
                     );
+                    dto.setOnline(presenceService.isUserOnline(u.getId()));
+                    dto.setLastSeen(u.getLastSeen());
+                    return dto;
                 })
                 .toList();
 

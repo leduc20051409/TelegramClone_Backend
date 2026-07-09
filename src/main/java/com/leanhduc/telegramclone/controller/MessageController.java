@@ -80,4 +80,16 @@ public class MessageController {
 
         return ResponseEntity.noContent().build();
     }
+
+    @GetMapping("/{conversationId}/search")
+    public ResponseEntity<List<ChatMessageResponse>> searchMessages(
+            @PathVariable UUID conversationId,
+            @RequestParam(required = false) String query,
+            @RequestParam(required = false) String date,
+            Principal principal
+    ) {
+        UUID currentUserId = UUID.fromString(principal.getName());
+        List<ChatMessageResponse> messages = messageService.searchMessages(conversationId, currentUserId, query, date);
+        return ResponseEntity.ok(messages);
+    }
 }

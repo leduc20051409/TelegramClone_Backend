@@ -10,5 +10,7 @@ public record ContactResponse(
         String displayName,
         String alias,
         Instant addedAt,
-        String avatarUrl
+        String avatarUrl,
+        boolean online,
+        Instant lastSeen
 ) {}

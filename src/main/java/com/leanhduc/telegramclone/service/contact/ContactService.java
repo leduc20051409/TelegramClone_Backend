@@ -11,6 +11,7 @@ import com.leanhduc.telegramclone.model.ContactId;
 import com.leanhduc.telegramclone.model.User;
 import com.leanhduc.telegramclone.repository.ContactRepository;
 import com.leanhduc.telegramclone.repository.UserRepository;
+import com.leanhduc.telegramclone.service.Presence.IPresenceService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -25,6 +26,7 @@ public class ContactService implements IContactService {
     private final ContactRepository contactRepository;
     private final UserRepository userRepository;
     private final ContactMapper contactMapper;
+    private final IPresenceService presenceService;
 
     @Override
     public void addContact(UUID ownerId, AddContactRequest request) {
@@ -52,14 +54,40 @@ public class ContactService implements IContactService {
     @Override
     public Page<ContactResponse> getContacts(UUID ownerId, Pageable pageable) {
         Page<Contact> contactPage = contactRepository.findByIdOwnerIdAndBlockedFalse(ownerId, pageable);
-        return contactPage.map(contactMapper::toResponse);
+        return contactPage.map(contact -> {
+            ContactResponse response = contactMapper.toResponse(contact);
+            boolean online = presenceService.isUserOnline(contact.getContact().getId());
+            return new ContactResponse(
+                    response.contactId(),
+                    response.userId(),
+                    response.username(),
+                    response.displayName(),
+                    response.alias(),
+                    response.addedAt(),
+                    response.avatarUrl(),
+                    online,
+                    response.lastSeen()
+            );
+        });
     }
 
     @Override
     public ContactResponse getContact(UUID ownerId, UUID contactId) {
         Contact contact = contactRepository.findByIdOwnerIdAndIdContactId(ownerId, contactId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
-        return contactMapper.toResponse(contact);
+        ContactResponse response = contactMapper.toResponse(contact);
+        boolean online = presenceService.isUserOnline(contactId);
+        return new ContactResponse(
+                response.contactId(),
+                response.userId(),
+                response.username(),
+                response.displayName(),
+                response.alias(),
+                response.addedAt(),
+                response.avatarUrl(),
+                online,
+                response.lastSeen()
+        );
     }
 
     @Override

@@ -21,8 +21,10 @@ public interface UserMapper {
     User toEntity(RegisterRequest request);
 
 
+    @Mapping(target = "online", ignore = true)
     UserDto toDto(User user);
 
     @Mapping(target = "avatarUrl", ignore = true)
+    @Mapping(target = "online", ignore = true)
     UserSummaryDto toSummaryDto(User user);
 }
