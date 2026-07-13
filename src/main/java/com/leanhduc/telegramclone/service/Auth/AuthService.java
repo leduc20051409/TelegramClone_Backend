@@ -143,7 +143,7 @@ public class AuthService implements IAuthService {
         PasswordResetToken resetToken = PasswordResetToken.builder()
                 .token(token)
                 .user(user)
-                .expiryDate(Instant.now().plusSeconds(15 * 60))
+                .expiryDate(Instant.now().plusSeconds(15L * 60))
                 .used(false)
                 .build();
 
