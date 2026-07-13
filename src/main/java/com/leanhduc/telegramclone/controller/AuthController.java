@@ -3,6 +3,8 @@ package com.leanhduc.telegramclone.controller;
 import com.leanhduc.telegramclone.dto.auth.AuthResponse;
 import com.leanhduc.telegramclone.dto.auth.LoginRequest;
 import com.leanhduc.telegramclone.dto.auth.RegisterRequest;
+import com.leanhduc.telegramclone.dto.auth.ForgotPasswordRequest;
+import com.leanhduc.telegramclone.dto.auth.ResetPasswordRequest;
 import com.leanhduc.telegramclone.service.Auth.IAuthService;
 import com.leanhduc.telegramclone.service.RefreshToken.IRefreshTokenService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -76,5 +78,17 @@ public class AuthController {
         refreshTokenService.revokeAllTokensByUser(userId);
         clearRefreshTokenCookie(response);
         return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/forgot-password")
+    public ResponseEntity<Void> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
+        authService.requestForgotPassword(request);
+        return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("/reset-password")
+    public ResponseEntity<Void> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
+        authService.resetPassword(request);
+        return ResponseEntity.ok().build();
     }
 }

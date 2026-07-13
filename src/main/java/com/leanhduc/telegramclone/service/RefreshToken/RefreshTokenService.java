@@ -92,6 +92,7 @@ public class RefreshTokenService implements IRefreshTokenService {
     }
 
     @Override
+    @Transactional
     public void revokeAllTokensByUser(UUID userId) {
         refreshTokenRepository.revokeAllByUserId(userId);
         log.info("Revoked all tokens for user: {}", userId);

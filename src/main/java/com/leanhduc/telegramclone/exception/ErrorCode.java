@@ -10,6 +10,8 @@ public enum ErrorCode {
     // ================= AUTH =================
     INVALID_CREDENTIALS("Invalid email or password", HttpStatus.UNAUTHORIZED),
     UNAUTHORIZED("Unauthorized", HttpStatus.UNAUTHORIZED),
+    PASSWORDS_DO_NOT_MATCH("Invalid request", HttpStatus.BAD_REQUEST),
+    INVALID_RESET_REQUEST("Invalid or expired request", HttpStatus.BAD_REQUEST),
 
     // ================= USER =================
     USER_NOT_FOUND("User not found", HttpStatus.NOT_FOUND),
