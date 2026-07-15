@@ -109,7 +109,9 @@ public class ConversationService implements IConversationService {
                     participants,
                     lastMsg != null && lastMsg.getSender() != null ? lastMsg.getSender().getId() : null,
                     unreadCount,
-                    getPinnedMessagesForConversation(conv.getId())
+                    getPinnedMessagesForConversation(conv.getId()),
+                    conv.getUsername(),
+                    conv.isPublic()
             );
         }
 
@@ -156,7 +158,9 @@ public class ConversationService implements IConversationService {
                 participants,
                 null,
                 0,
-                List.of()
+                List.of(),
+                newConversation.getUsername(),
+                newConversation.isPublic()
         );
     }
 
@@ -233,7 +237,9 @@ public class ConversationService implements IConversationService {
                             participants,
                             lastMsg != null && lastMsg.getSender() != null ? lastMsg.getSender().getId() : null,
                             unreadCount,
-                            getPinnedMessagesForConversation(conv.getId())
+                            getPinnedMessagesForConversation(conv.getId()),
+                            conv.getUsername(),
+                            conv.isPublic()
                     );
                 })
                 .toList();
@@ -323,7 +329,9 @@ public class ConversationService implements IConversationService {
                 participants,
                 null,
                 0,
-                List.of()
+                List.of(),
+                conversation.getUsername(),
+                conversation.isPublic()
         );
     }
 
@@ -459,7 +467,9 @@ public class ConversationService implements IConversationService {
                 participants,
                 null,
                 0,
-                getPinnedMessagesForConversation(conversation.getId())
+                getPinnedMessagesForConversation(conversation.getId()),
+                conversation.getUsername(),
+                conversation.isPublic()
         );
     }
 
@@ -511,6 +521,40 @@ public class ConversationService implements IConversationService {
             conversation.setAvatarMediaId(request.getAvatarMediaId());
         }
 
+        // Handle public/private type and username updates
+        if (request.getIsPublic() != null) {
+            boolean newIsPublic = request.getIsPublic();
+            if (newIsPublic) {
+                String targetUsername = request.getUsername() != null ? request.getUsername().trim() : conversation.getUsername();
+                if (targetUsername == null || targetUsername.isEmpty()) {
+                    throw new BusinessException(ErrorCode.USERNAME_REQUIRED_FOR_PUBLIC);
+                }
+                conversation.setPublic(true);
+            } else {
+                conversation.setPublic(false);
+                conversation.setUsername(null);
+            }
+        }
+
+        if (request.getUsername() != null) {
+            String trimmedUsername = request.getUsername().trim();
+            if (trimmedUsername.isEmpty()) {
+                if (conversation.isPublic()) {
+                    throw new BusinessException(ErrorCode.USERNAME_REQUIRED_FOR_PUBLIC);
+                }
+                conversation.setUsername(null);
+            } else {
+                if (trimmedUsername.length() < 3 || trimmedUsername.length() > 32 || !trimmedUsername.matches("^[a-z0-9_]+$")) {
+                    throw new BusinessException(ErrorCode.INVALID_USERNAME_FORMAT);
+                }
+                Optional<Conversation> existing = conversationRepository.findByUsername(trimmedUsername);
+                if (existing.isPresent() && !existing.get().getId().equals(conversation.getId())) {
+                    throw new BusinessException(ErrorCode.USERNAME_ALREADY_EXISTS);
+                }
+                conversation.setUsername(trimmedUsername);
+            }
+        }
+
         conversation = conversationRepository.save(conversation);
 
         String avatarUrl = null;
@@ -553,7 +597,9 @@ public class ConversationService implements IConversationService {
                 participants,
                 null,
                 0,
-                getPinnedMessagesForConversation(conversation.getId())
+                getPinnedMessagesForConversation(conversation.getId()),
+                conversation.getUsername(),
+                conversation.isPublic()
         );
     }
 
@@ -739,5 +785,80 @@ public class ConversationService implements IConversationService {
             responses.add(messageMapper.toResponse(message, mediaDtos, viewCount));
         }
         return responses;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<ConversationResponse> searchPublicConversations(String query) {
+        String trimmedQuery = query != null ? query.trim() : "";
+        if (trimmedQuery.isEmpty()) {
+            return List.of();
+        }
+        List<Conversation> conversations = conversationRepository.searchPublicConversations(trimmedQuery, PageRequest.of(0, 15));
+        return conversations.stream()
+                .map(this::mapToConversationResponse)
+                .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public ConversationResponse getPublicConversationByUsername(String username) {
+        if (username == null || username.trim().isEmpty()) {
+            throw new BusinessException(ErrorCode.CONVERSATION_NOT_FOUND);
+        }
+        Conversation conv = conversationRepository.findByUsername(username.trim())
+                .orElseThrow(() -> new BusinessException(ErrorCode.CONVERSATION_NOT_FOUND));
+        return mapToConversationResponse(conv);
+    }
+
+    private ConversationResponse mapToConversationResponse(Conversation conv) {
+        List<Message> latestMessages = messageRepository.findByConversationIdAndDeletedFalseOrderByIdDesc(
+                conv.getId(), PageRequest.of(0, 1)
+        );
+        Message lastMsg = latestMessages.isEmpty() ? null : latestMessages.get(0);
+        List<UserDto> participants = memberRepository.findByConversationIdAndLeftAtIsNull(conv.getId()).stream()
+                .map(member -> {
+                    User u = member.getUser();
+                    UserDto dto = new UserDto(
+                            u.getId(),
+                            u.getUsername(),
+                            u.getDisplayName(),
+                            u.getEmail(),
+                            u.getBio(),
+                            u.getAvatarMediaId(),
+                            u.getRole(),
+                            member.getRole() != null ? member.getRole().name() : null
+                    );
+                    dto.setOnline(presenceService.isUserOnline(u.getId()));
+                    dto.setLastSeen(u.getLastSeen());
+                    return dto;
+                })
+                .toList();
+
+        String avatarUrl = null;
+        if (conv.getAvatarMediaId() != null) {
+            avatarUrl = mediaRepository.findById(conv.getAvatarMediaId())
+                    .map(Media::getUrl)
+                    .orElse(null);
+        }
+
+        return new ConversationResponse(
+                conv.getId(),
+                conv.getType(),
+                conv.getTitle(),
+                conv.getCreatedAt(),
+                lastMsg != null ? lastMsg.getBody() : null,
+                lastMsg != null ? lastMsg.getCreatedAt() : null,
+                null,
+                avatarUrl,
+                conv.getAvatarMediaId(),
+                conv.getDescription(),
+                participants,
+                lastMsg != null && lastMsg.getSender() != null ? lastMsg.getSender().getId() : null,
+                0,
+                getPinnedMessagesForConversation(conv.getId()),
+                conv.getUsername(),
+                conv.isPublic()
+        );
     }
 }

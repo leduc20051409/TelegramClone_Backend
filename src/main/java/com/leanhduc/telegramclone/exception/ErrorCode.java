@@ -26,6 +26,9 @@ public enum ErrorCode {
     NOT_IN_CONVERSATION("You are not a member of this conversation", HttpStatus.FORBIDDEN),
     INVALID_CONVERSATION_TITLE("Conversation title must be between 1 and 100 characters", HttpStatus.BAD_REQUEST),
     INVALID_CONVERSATION_DESCRIPTION("Conversation description must not exceed 1000 characters", HttpStatus.BAD_REQUEST),
+    USERNAME_ALREADY_EXISTS("Username is already taken", HttpStatus.CONFLICT),
+    INVALID_USERNAME_FORMAT("Username must be between 3 and 32 characters, using lowercase letters, numbers, and underscores", HttpStatus.BAD_REQUEST),
+    USERNAME_REQUIRED_FOR_PUBLIC("Username is required for public groups or channels", HttpStatus.BAD_REQUEST),
 
     // ================= FILE / MEDIA =================
     INVALID_FILE("Invalid file", HttpStatus.BAD_REQUEST),

@@ -31,7 +31,7 @@ public class ConversationInviteLinkService implements IConversationInviteLinkSer
     private final UserRepository userRepository;
     private final MediaRepository mediaRepository;
     private final InviteLinkMapper inviteLinkMapper;
-    
+
     private final SecureRandom secureRandom = new SecureRandom();
 
     @Override
@@ -109,14 +109,14 @@ public class ConversationInviteLinkService implements IConversationInviteLinkSer
                 conversation.getDescription(),
                 avatarUrl,
                 memberCount,
-                conversation.getType().name()
-        );
+                conversation.getType().name());
     }
 
     @Override
     @Transactional
     public InviteLinkResponse joinConversation(UUID userId, String inviteCode) {
-        // Retrieve invite link with pessimistic write lock to handle concurrent join transactions safely
+        // Retrieve invite link with pessimistic write lock to handle concurrent join
+        // transactions safely
         ConversationInviteLink inviteLink = inviteLinkRepository.findByInviteCodeForUpdate(inviteCode)
                 .orElseThrow(() -> new BusinessException(ErrorCode.INVITE_LINK_NOT_FOUND));
 
@@ -137,7 +137,8 @@ public class ConversationInviteLinkService implements IConversationInviteLinkSer
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
 
         // Check if user is already an active member of this conversation
-        Optional<ConversationMember> targetMemberOpt = memberRepository.findById(new ConversationMemberId(conversationId, userId));
+        Optional<ConversationMember> targetMemberOpt = memberRepository
+                .findById(new ConversationMemberId(conversationId, userId));
         if (targetMemberOpt.isPresent()) {
             ConversationMember targetMember = targetMemberOpt.get();
             if (targetMember.getLeftAt() == null) {
@@ -191,7 +192,8 @@ public class ConversationInviteLinkService implements IConversationInviteLinkSer
             throw new BusinessException(ErrorCode.NOT_IN_CONVERSATION);
         }
 
-        List<ConversationInviteLink> links = inviteLinkRepository.findAllByConversationIdAndIsRevokedFalse(conversationId);
+        List<ConversationInviteLink> links = inviteLinkRepository
+                .findAllByConversationIdAndIsRevokedFalse(conversationId);
 
         // If requester is not owner/admin, only return the primary link(s)
         if (member.getRole() != ConversationRole.OWNER && member.getRole() != ConversationRole.ADMIN) {

@@ -7,12 +7,23 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import org.springframework.data.domain.Pageable;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
 @Repository
 public interface ConversationRepository extends JpaRepository<Conversation, UUID> {
+
+    Optional<Conversation> findByUsername(String username);
+
+    boolean existsByUsername(String username);
+
+    @Query("SELECT c FROM Conversation c " +
+            "WHERE c.isPublic = true " +
+            "AND (LOWER(c.title) LIKE LOWER(CONCAT('%', :query, '%')) " +
+            "OR LOWER(c.username) LIKE LOWER(CONCAT('%', :query, '%')))")
+    List<Conversation> searchPublicConversations(@Param("query") String query, Pageable pageable);
 
     @Query("SELECT c FROM Conversation c " +
             "JOIN ConversationMember cm1 ON c.id = cm1.conversation.id " +

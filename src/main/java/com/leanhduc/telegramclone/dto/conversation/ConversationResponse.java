@@ -21,6 +21,8 @@ public record ConversationResponse(
         List<UserDto> participants,
         UUID lastMessageSenderId,
         Integer unreadCount,
-        List<ChatMessageResponse> pinnedMessages
+        List<ChatMessageResponse> pinnedMessages,
+        String username,
+        boolean isPublic
 ) {
 }

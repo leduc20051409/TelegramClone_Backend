@@ -245,4 +245,14 @@ public class ConversationController {
 
         return ResponseEntity.noContent().build();
     }
+
+    @GetMapping("/search")
+    public ResponseEntity<List<ConversationResponse>> searchPublicConversations(@RequestParam String query) {
+        return ResponseEntity.ok(conversationService.searchPublicConversations(query));
+    }
+
+    @GetMapping("/by-username/{username}")
+    public ResponseEntity<ConversationResponse> getPublicConversationByUsername(@PathVariable String username) {
+        return ResponseEntity.ok(conversationService.getPublicConversationByUsername(username));
+    }
 }

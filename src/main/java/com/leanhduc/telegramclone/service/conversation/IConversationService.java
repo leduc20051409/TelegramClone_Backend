@@ -22,4 +22,6 @@ public interface IConversationService {
     void updateMemberMute(UUID requesterId, UUID conversationId, boolean isMuted);
     ConversationType getConversationType(UUID conversationId);
     void deleteConversation(UUID requesterId, UUID conversationId);
+    List<ConversationResponse> searchPublicConversations(String query);
+    ConversationResponse getPublicConversationByUsername(String username);
 }

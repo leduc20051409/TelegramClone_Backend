@@ -37,6 +37,9 @@ public class Conversation {
     @Builder.Default
     private boolean isPublic = false;
 
+    @Column(unique = true)
+    private String username;
+
     @Column(name = "created_by")
     private UUID createdBy;
 
