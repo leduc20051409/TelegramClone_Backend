@@ -3,7 +3,7 @@
 
 A real-time messaging and chat platform backend (Telegram Clone) built with Spring Boot.
 
-[![SonarCloud](https://sonarcloud.io/images/project_badges/sonarcloud-black.svg)](https://sonarcloud.io/project/configuration?id=ngntu10_OptiMart)
+[![SonarCloud](https://sonarcloud.io/images/project_badges/sonarcloud-black.svg)](https://sonarcloud.io/project/overview?id=leduc20051409_TelegramClone_Backend)
 
 ## Introduction
 
@@ -99,9 +99,9 @@ If you would like to contribute to the development of this project, please follo
 
 ## License
 
-This project is licensed under the [`Apache License`](LICENSE).
+This project is licensed under the [`MIT License`](LICENSE).
 
 ```text
-Apache License
+MIT License
 Copyright (c) 2026 Le Anh Duc
 ```
