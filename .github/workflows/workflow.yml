@@ -1,0 +1,25 @@
+name: Telegram Clone CI
+on:
+  push:
+    branches:
+      - feature/github-actions
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Build Spring Boot Jar (Skip Test)
+        run: mvn clean package -DskipTests
+
+      - name: Build Docker Image
+        run: docker build -t telegramclone .
