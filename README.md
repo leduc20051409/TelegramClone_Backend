@@ -1,4 +1,4 @@
-![TelegramClone](https://socialify.git.ci/leduc20051409/TelegramClone/image?custom_language=Java&font=Inter&forks=1&issues=1&language=1&name=1&owner=1&pattern=Overlapping+Hexagons&stargazers=1&theme=Dark)
+![TelegramClone](https://socialify.git.ci/leduc20051409/TelegramClone_Backend/image?custom_language=Java&font=Inter&forks=1&issues=1&language=1&logo=https%3A%2F%2Fres.cloudinary.com%2Fdtev7a41d%2Fimage%2Fupload%2Fv1784819830%2Ftelegram_icon_xpat1z.png&name=1&owner=1&pattern=Circuit+Board&stargazers=1&theme=Dark)
 # ✈️ TelegramClone Backend
 
 A real-time messaging and chat platform backend (Telegram Clone) built with Spring Boot.
@@ -94,8 +94,7 @@ http://localhost:8080/swagger-ui/index.html
 
 If you would like to contribute to the development of this project, please follow our contribution guidelines.
 
-![Alt](https://repobeats.axiom.co/api/embed/fd7fd76dafe452bdb7c2bc12856bd45c277ee732.svg "Repobeats analytics image")
-
+![Alt](https://repobeats.axiom.co/api/embed/4cbd6cb193becdb9063f6ac2c53660e212afe391.svg "Repobeats analytics image")
 
 ## License
 
