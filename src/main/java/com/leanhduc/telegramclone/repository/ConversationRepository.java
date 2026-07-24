@@ -17,6 +17,8 @@ public interface ConversationRepository extends JpaRepository<Conversation, UUID
 
     Optional<Conversation> findByUsername(String username);
 
+    Optional<Conversation> findByUsernameIgnoreCase(String username);
+
     boolean existsByUsername(String username);
 
     @Query("SELECT c FROM Conversation c " +

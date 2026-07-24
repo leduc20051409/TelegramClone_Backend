@@ -75,24 +75,62 @@ public class ConversationInviteLinkService implements IConversationInviteLinkSer
         return inviteLinkMapper.toResponse(inviteLink);
     }
 
+    private record ResolvedInviteTarget(
+            Conversation conversation,
+            ConversationInviteLink inviteLink,
+            boolean isPublicUsernameFlow
+    ) {}
+
+    private ResolvedInviteTarget resolveByCode(String code, boolean forUpdate) {
+        if (code == null || code.trim().isEmpty()) {
+            throw new BusinessException(ErrorCode.INVITE_LINK_NOT_FOUND);
+        }
+
+        String trimmedCode = code.trim();
+
+        // 1. Try finding by invite code (case-sensitive)
+        Optional<ConversationInviteLink> inviteLinkOpt = forUpdate
+                ? inviteLinkRepository.findByInviteCodeForUpdate(trimmedCode)
+                : inviteLinkRepository.findByInviteCode(trimmedCode);
+
+        if (inviteLinkOpt.isPresent()) {
+            ConversationInviteLink link = inviteLinkOpt.get();
+            return new ResolvedInviteTarget(link.getConversation(), link, false);
+        }
+
+        // 2. Fallback to public conversation username lookup (case-insensitive)
+        Optional<Conversation> convOpt = conversationRepository.findByUsernameIgnoreCase(trimmedCode);
+        if (convOpt.isPresent()) {
+            Conversation conv = convOpt.get();
+            if (conv.isPublic() && conv.getUsername() != null) {
+                return new ResolvedInviteTarget(conv, null, true);
+            }
+        }
+
+        throw new BusinessException(ErrorCode.INVITE_LINK_NOT_FOUND);
+    }
+
     @Override
     public InviteLinkInfoResponse getInviteLinkInfo(String inviteCode) {
-        ConversationInviteLink inviteLink = inviteLinkRepository.findByInviteCode(inviteCode)
-                .orElseThrow(() -> new BusinessException(ErrorCode.INVITE_LINK_NOT_FOUND));
+        ResolvedInviteTarget target = resolveByCode(inviteCode, false);
 
-        if (inviteLink.isRevoked()) {
-            throw new BusinessException(ErrorCode.INVITE_LINK_REVOKED);
+        if (!target.isPublicUsernameFlow()) {
+            ConversationInviteLink inviteLink = target.inviteLink();
+
+            if (inviteLink.isRevoked()) {
+                throw new BusinessException(ErrorCode.INVITE_LINK_REVOKED);
+            }
+
+            if (inviteLink.getExpireAt() != null && inviteLink.getExpireAt().isBefore(Instant.now())) {
+                throw new BusinessException(ErrorCode.INVITE_LINK_EXPIRED);
+            }
+
+            if (inviteLink.getMemberLimit() > 0 && inviteLink.getCurrentUses() >= inviteLink.getMemberLimit()) {
+                throw new BusinessException(ErrorCode.INVITE_LINK_LIMIT_REACHED);
+            }
         }
 
-        if (inviteLink.getExpireAt() != null && inviteLink.getExpireAt().isBefore(Instant.now())) {
-            throw new BusinessException(ErrorCode.INVITE_LINK_EXPIRED);
-        }
-
-        if (inviteLink.getMemberLimit() > 0 && inviteLink.getCurrentUses() >= inviteLink.getMemberLimit()) {
-            throw new BusinessException(ErrorCode.INVITE_LINK_LIMIT_REACHED);
-        }
-
-        Conversation conversation = inviteLink.getConversation();
+        Conversation conversation = target.conversation();
         String avatarUrl = null;
         if (conversation.getAvatarMediaId() != null) {
             avatarUrl = mediaRepository.findById(conversation.getAvatarMediaId())
@@ -102,8 +140,12 @@ public class ConversationInviteLinkService implements IConversationInviteLinkSer
 
         int memberCount = memberRepository.findByConversationIdAndLeftAtIsNull(conversation.getId()).size();
 
+        String codeToReturn = target.isPublicUsernameFlow()
+                ? conversation.getUsername()
+                : target.inviteLink().getInviteCode();
+
         return new InviteLinkInfoResponse(
-                inviteLink.getInviteCode(),
+                codeToReturn,
                 conversation.getId(),
                 conversation.getTitle(),
                 conversation.getDescription(),
@@ -115,36 +157,57 @@ public class ConversationInviteLinkService implements IConversationInviteLinkSer
     @Override
     @Transactional
     public InviteLinkResponse joinConversation(UUID userId, String inviteCode) {
-        // Retrieve invite link with pessimistic write lock to handle concurrent join
-        // transactions safely
-        ConversationInviteLink inviteLink = inviteLinkRepository.findByInviteCodeForUpdate(inviteCode)
-                .orElseThrow(() -> new BusinessException(ErrorCode.INVITE_LINK_NOT_FOUND));
+        ResolvedInviteTarget target = resolveByCode(inviteCode, true);
 
-        if (inviteLink.isRevoked()) {
-            throw new BusinessException(ErrorCode.INVITE_LINK_REVOKED);
+        if (!target.isPublicUsernameFlow()) {
+            ConversationInviteLink inviteLink = target.inviteLink();
+
+            if (inviteLink.isRevoked()) {
+                throw new BusinessException(ErrorCode.INVITE_LINK_REVOKED);
+            }
+
+            if (inviteLink.getExpireAt() != null && inviteLink.getExpireAt().isBefore(Instant.now())) {
+                throw new BusinessException(ErrorCode.INVITE_LINK_EXPIRED);
+            }
+
+            if (inviteLink.getMemberLimit() > 0 && inviteLink.getCurrentUses() >= inviteLink.getMemberLimit()) {
+                throw new BusinessException(ErrorCode.INVITE_LINK_LIMIT_REACHED);
+            }
         }
 
-        if (inviteLink.getExpireAt() != null && inviteLink.getExpireAt().isBefore(Instant.now())) {
-            throw new BusinessException(ErrorCode.INVITE_LINK_EXPIRED);
-        }
-
-        if (inviteLink.getMemberLimit() > 0 && inviteLink.getCurrentUses() >= inviteLink.getMemberLimit()) {
-            throw new BusinessException(ErrorCode.INVITE_LINK_LIMIT_REACHED);
-        }
-
-        UUID conversationId = inviteLink.getConversation().getId();
+        Conversation conversation = target.conversation();
+        UUID conversationId = conversation.getId();
         User targetUser = userRepository.findById(userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
 
         // Check if user is already an active member of this conversation
         Optional<ConversationMember> targetMemberOpt = memberRepository
                 .findById(new ConversationMemberId(conversationId, userId));
+
         if (targetMemberOpt.isPresent()) {
             ConversationMember targetMember = targetMemberOpt.get();
             if (targetMember.getLeftAt() == null) {
-                throw new BusinessException(ErrorCode.ALREADY_IN_CONVERSATION);
+                // If user is already an active member, return success response directly to navigate to chat
+                if (target.isPublicUsernameFlow()) {
+                    return new InviteLinkResponse(
+                            0L,
+                            conversationId,
+                            conversation.getUsername(),
+                            conversation.getTitle(),
+                            null,
+                            0,
+                            0,
+                            false,
+                            true,
+                            conversation.getCreatedBy(),
+                            conversation.getCreatedAt(),
+                            Instant.now()
+                    );
+                } else {
+                    return inviteLinkMapper.toResponse(target.inviteLink());
+                }
             }
-            // Reactivate membership
+            // Reactivate membership if user previously left
             targetMember.setLeftAt(null);
             targetMember.setJoinedAt(Instant.now());
             targetMember.setRole(ConversationRole.MEMBER);
@@ -153,7 +216,7 @@ public class ConversationInviteLinkService implements IConversationInviteLinkSer
             // Create new membership
             ConversationMember newMember = ConversationMember.builder()
                     .id(new ConversationMemberId(conversationId, userId))
-                    .conversation(inviteLink.getConversation())
+                    .conversation(conversation)
                     .user(targetUser)
                     .role(ConversationRole.MEMBER)
                     .joinedAt(Instant.now())
@@ -161,11 +224,28 @@ public class ConversationInviteLinkService implements IConversationInviteLinkSer
             memberRepository.save(newMember);
         }
 
-        // Increment use count atomically within the pessimistic write lock transaction
-        inviteLink.setCurrentUses(inviteLink.getCurrentUses() + 1);
-        inviteLink = inviteLinkRepository.save(inviteLink);
-
-        return inviteLinkMapper.toResponse(inviteLink);
+        if (target.isPublicUsernameFlow()) {
+            return new InviteLinkResponse(
+                    0L,
+                    conversationId,
+                    conversation.getUsername(),
+                    conversation.getTitle(),
+                    null,
+                    0,
+                    0,
+                    false,
+                    true,
+                    conversation.getCreatedBy(),
+                    conversation.getCreatedAt(),
+                    Instant.now()
+            );
+        } else {
+            // Increment use count atomically within the pessimistic write lock transaction
+            ConversationInviteLink inviteLink = target.inviteLink();
+            inviteLink.setCurrentUses(inviteLink.getCurrentUses() + 1);
+            inviteLink = inviteLinkRepository.save(inviteLink);
+            return inviteLinkMapper.toResponse(inviteLink);
+        }
     }
 
     @Override
