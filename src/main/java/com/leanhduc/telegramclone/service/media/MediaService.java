@@ -33,13 +33,11 @@ public class MediaService implements IMediaService {
             "image/jpeg", "image/png", "image/gif", "image/webp",
             "video/mp4", "video/webm",
             "application/pdf", "application/msword",
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-    );
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
     private static final List<String> ALLOWED_EXTENSIONS = Arrays.asList(
             "jpg", "jpeg", "png", "gif", "webp",
             "mp4", "webm",
-            "pdf", "doc", "docx"
-    );
+            "pdf", "doc", "docx");
 
     @Override
     public UploadResponseDto uploadFile(UUID userId, MultipartFile file) {
@@ -72,9 +70,7 @@ public class MediaService implements IMediaService {
                     ObjectUtils.asMap(
                             "resource_type", resourceType,
                             "folder", "telegram-clone/" + userId,
-                            "public_id", originalFilename.replaceAll("\\.[^.]+$", "")
-                    )
-            );
+                            "public_id", originalFilename.replaceAll("\\.[^.]+$", "")));
             String secureUrl = (String) result.get("secure_url");
             String storageKey = (String) result.get("public_id");
             Integer width = toInteger(result.get("width"));
@@ -100,10 +96,89 @@ public class MediaService implements IMediaService {
                     secureUrl,
                     contentType,
                     size,
-                    originalFilename
-            );
+                    originalFilename);
         } catch (IOException e) {
             log.error("Failed to upload file to Cloudinary for user: {}", userId, e);
+            throw new BusinessException(ErrorCode.FILE_UPLOAD_FAILED);
+        }
+    }
+
+    @Override
+    public UploadResponseDto uploadAvatar(UUID ownerId, MultipartFile file, String targetType, String targetId) {
+        if (file == null || file.isEmpty()) {
+            throw new BusinessException(ErrorCode.INVALID_FILE);
+        }
+        String contentType = file.getContentType();
+        long size = file.getSize();
+
+        if (size > MAX_SIZE) {
+            throw new BusinessException(ErrorCode.FILE_SIZE_EXCEEDED);
+        }
+        if (contentType == null || !contentType.startsWith("image/")) {
+            throw new BusinessException(ErrorCode.UNSUPPORTED_FILE_TYPE);
+        }
+
+        String folder;
+        String filename;
+        if ("CONVERSATION".equalsIgnoreCase(targetType) || "GROUP".equalsIgnoreCase(targetType)
+                || "CHANNEL".equalsIgnoreCase(targetType)) {
+            if (targetId == null || targetId.isBlank()) {
+                throw new BusinessException(ErrorCode.INVALID_INPUT);
+            }
+            folder = "telegram-clone/" + targetId;
+            filename = "conv_avatar";
+        } else {
+            String resolvedUserId = (targetId != null && !targetId.isBlank()) ? targetId : ownerId.toString();
+            folder = "telegram-clone/" + resolvedUserId;
+            filename = "user_avatar";
+        }
+
+        try {
+            Map<String, Object> result = cloudinary.uploader().upload(
+                    file.getBytes(),
+                    ObjectUtils.asMap(
+                            "resource_type", "image",
+                            "folder", folder,
+                            "public_id", filename,
+                            "overwrite", true,
+                            "invalidate", true));
+            String secureUrl = (String) result.get("secure_url");
+            String storageKey = (String) result.get("public_id");
+            Integer width = toInteger(result.get("width"));
+            Integer height = toInteger(result.get("height"));
+
+            String cacheBustedUrl = secureUrl.contains("?")
+                    ? secureUrl + "&t=" + System.currentTimeMillis()
+                    : secureUrl + "?t=" + System.currentTimeMillis();
+
+            Media media = mediaRepository.findByStorageKey(storageKey)
+                    .orElseGet(() -> Media.builder()
+                            .ownerId(ownerId)
+                            .storageKey(storageKey)
+                            .resourceType("image")
+                            .mimeType(contentType)
+                            .fileName(folder + "/" + filename)
+                            .status(MediaStatus.ACTIVE)
+                            .build());
+
+            media.setOwnerId(ownerId);
+            media.setUrl(cacheBustedUrl);
+            media.setMimeType(contentType);
+            media.setFileSize(size);
+            media.setWidth(width);
+            media.setHeight(height);
+            media.setStatus(MediaStatus.ACTIVE);
+
+            media = mediaRepository.save(media);
+
+            return new UploadResponseDto(
+                    media.getId(),
+                    cacheBustedUrl,
+                    contentType,
+                    size,
+                    file.getOriginalFilename() != null ? file.getOriginalFilename() : filename);
+        } catch (IOException e) {
+            log.error("Failed to upload avatar to Cloudinary for owner: {}", ownerId, e);
             throw new BusinessException(ErrorCode.FILE_UPLOAD_FAILED);
         }
     }
@@ -140,9 +215,12 @@ public class MediaService implements IMediaService {
     }
 
     private String getResourceType(String contentType) {
-        if (contentType == null) return "raw";
-        if (contentType.startsWith("image")) return "image";
-        if (contentType.startsWith("video")) return "video";
+        if (contentType == null)
+            return "raw";
+        if (contentType.startsWith("image"))
+            return "image";
+        if (contentType.startsWith("video"))
+            return "video";
         return "raw"; // document, pdf, docx
     }
 }

@@ -6,11 +6,11 @@ import org.springframework.stereotype.Repository;
 
 import java.util.List;
 import java.util.UUID;
-import com.leanhduc.telegramclone.model.enums.MediaStatus;
+import java.util.Optional;
 
 @Repository
 public interface MediaRepository extends JpaRepository<Media, UUID> {
     List<Media> findByIdInAndOwnerId(List<UUID> ids, UUID ownerId);
 
-    boolean existsByIdAndOwnerIdAndStatus(UUID id, UUID ownerId, MediaStatus status);
+    Optional<Media> findByStorageKey(String storageKey);
 }

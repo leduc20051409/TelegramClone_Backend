@@ -31,12 +31,23 @@ public class MediaController {
         return ResponseEntity.ok(response);
     }
 
+    @PostMapping(value = "/upload/avatar", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @Operation(summary = "Upload an avatar (user, group, or channel) to Cloudinary with fixed public_id overwrite")
+    public ResponseEntity<UploadResponseDto> uploadAvatar(
+            Principal principal,
+            @RequestParam("file") MultipartFile file,
+            @RequestParam(value = "targetType", defaultValue = "USER") String targetType,
+            @RequestParam(value = "targetId", required = false) String targetId) {
+        UUID ownerId = UUID.fromString(principal.getName());
+        UploadResponseDto response = mediaService.uploadAvatar(ownerId, file, targetType, targetId);
+        return ResponseEntity.ok(response);
+    }
+
     @DeleteMapping("/{mediaId}")
     @Operation(summary = "Delete a temporary uploaded file")
     public ResponseEntity<Void> deleteTemporaryMedia(
             Principal principal,
-            @PathVariable UUID mediaId
-    ) {
+            @PathVariable UUID mediaId) {
         UUID ownerId = UUID.fromString(principal.getName());
         mediaService.deleteTemporaryMedia(ownerId, mediaId);
         return ResponseEntity.noContent().build();

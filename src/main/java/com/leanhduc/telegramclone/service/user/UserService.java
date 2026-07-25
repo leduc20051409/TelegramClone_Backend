@@ -6,6 +6,7 @@ import com.leanhduc.telegramclone.dto.user.UserSummaryDto;
 import com.leanhduc.telegramclone.exception.NotFoundException;
 import com.leanhduc.telegramclone.mapper.UserMapper;
 import com.leanhduc.telegramclone.model.User;
+import com.leanhduc.telegramclone.repository.MediaRepository;
 import com.leanhduc.telegramclone.repository.UserRepository;
 import com.leanhduc.telegramclone.service.Presence.IPresenceService;
 import lombok.RequiredArgsConstructor;
@@ -20,6 +21,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class UserService implements IUserService{
     private final UserRepository userRepository;
+    private final MediaRepository mediaRepository;
     private final UserMapper userMapper;
     private final IPresenceService presenceService;
 
@@ -31,6 +33,7 @@ public class UserService implements IUserService{
                 orElseThrow(() -> new NotFoundException("User not found with id: " + userId));
 
         UserDto dto = userMapper.toDto(user);
+        dto.setAvatarUrl(resolveAvatarUrl(user.getAvatarMediaId()));
         dto.setOnline(presenceService.isUserOnline(userId));
         dto.setLastSeen(user.getLastSeen());
         return dto;
@@ -41,6 +44,7 @@ public class UserService implements IUserService{
         User user = userRepository.findById(userId).
                 orElseThrow(() -> new NotFoundException("User not found with id: " + userId));
         UserSummaryDto dto = userMapper.toSummaryDto(user);
+        dto.setAvatarUrl(resolveAvatarUrl(user.getAvatarMediaId()));
         dto.setOnline(presenceService.isUserOnline(userId));
         dto.setLastSeen(user.getLastSeen());
         return dto;
@@ -64,6 +68,7 @@ public class UserService implements IUserService{
 
         User savedUser = userRepository.save(user);
         UserDto dto = userMapper.toDto(savedUser);
+        dto.setAvatarUrl(resolveAvatarUrl(savedUser.getAvatarMediaId()));
         dto.setOnline(presenceService.isUserOnline(userId));
         dto.setLastSeen(savedUser.getLastSeen());
         return dto;
@@ -76,9 +81,17 @@ public class UserService implements IUserService{
         Page<User> users = userRepository.searchUsers(query, userId, pageable);
         return users.map(user -> {
             UserSummaryDto dto = userMapper.toSummaryDto(user);
+            dto.setAvatarUrl(resolveAvatarUrl(user.getAvatarMediaId()));
             dto.setOnline(presenceService.isUserOnline(user.getId()));
             dto.setLastSeen(user.getLastSeen());
             return dto;
         });
+    }
+
+    private String resolveAvatarUrl(UUID avatarMediaId) {
+        if (avatarMediaId == null) return null;
+        return mediaRepository.findById(avatarMediaId)
+                .map(com.leanhduc.telegramclone.model.Media::getUrl)
+                .orElse(null);
     }
 }

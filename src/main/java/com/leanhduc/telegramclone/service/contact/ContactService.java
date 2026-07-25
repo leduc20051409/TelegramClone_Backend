@@ -20,6 +20,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.UUID;
 
+import com.leanhduc.telegramclone.repository.MediaRepository;
+import com.leanhduc.telegramclone.model.Media;
+
 @Service
 @RequiredArgsConstructor
 public class ContactService implements IContactService {
@@ -27,6 +30,14 @@ public class ContactService implements IContactService {
     private final UserRepository userRepository;
     private final ContactMapper contactMapper;
     private final IPresenceService presenceService;
+    private final MediaRepository mediaRepository;
+
+    private String resolveAvatarUrl(UUID avatarMediaId) {
+        if (avatarMediaId == null) return null;
+        return mediaRepository.findById(avatarMediaId)
+                .map(Media::getUrl)
+                .orElse(null);
+    }
 
     @Override
     public void addContact(UUID ownerId, AddContactRequest request) {
@@ -57,6 +68,7 @@ public class ContactService implements IContactService {
         return contactPage.map(contact -> {
             ContactResponse response = contactMapper.toResponse(contact);
             boolean online = presenceService.isUserOnline(contact.getContact().getId());
+            String avatarUrl = resolveAvatarUrl(contact.getContact().getAvatarMediaId());
             return new ContactResponse(
                     response.contactId(),
                     response.userId(),
@@ -64,7 +76,7 @@ public class ContactService implements IContactService {
                     response.displayName(),
                     response.alias(),
                     response.addedAt(),
-                    response.avatarUrl(),
+                    avatarUrl,
                     online,
                     response.lastSeen()
             );
@@ -77,6 +89,7 @@ public class ContactService implements IContactService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
         ContactResponse response = contactMapper.toResponse(contact);
         boolean online = presenceService.isUserOnline(contactId);
+        String avatarUrl = resolveAvatarUrl(contact.getContact().getAvatarMediaId());
         return new ContactResponse(
                 response.contactId(),
                 response.userId(),
@@ -84,7 +97,7 @@ public class ContactService implements IContactService {
                 response.displayName(),
                 response.alias(),
                 response.addedAt(),
-                response.avatarUrl(),
+                avatarUrl,
                 online,
                 response.lastSeen()
         );

@@ -86,6 +86,7 @@ public class ConversationService implements IConversationService {
                                 u.getRole(),
                                 member.getRole() != null ? member.getRole().name() : null
                         );
+                        dto.setAvatarUrl(resolveUserAvatarUrl(u.getAvatarMediaId()));
                         dto.setOnline(presenceService.isUserOnline(u.getId()));
                         dto.setLastSeen(u.getLastSeen());
                         return dto;
@@ -135,10 +136,12 @@ public class ConversationService implements IConversationService {
         memberRepository.saveAll(List.of(member1, member2));
 
         UserDto u1 = new UserDto(currentUser.getId(), currentUser.getUsername(), currentUser.getDisplayName(), currentUser.getEmail(), currentUser.getBio(), currentUser.getAvatarMediaId(), currentUser.getRole());
+        u1.setAvatarUrl(resolveUserAvatarUrl(currentUser.getAvatarMediaId()));
         u1.setOnline(presenceService.isUserOnline(currentUser.getId()));
         u1.setLastSeen(currentUser.getLastSeen());
 
         UserDto u2 = new UserDto(targetUser.getId(), targetUser.getUsername(), targetUser.getDisplayName(), targetUser.getEmail(), targetUser.getBio(), targetUser.getAvatarMediaId(), targetUser.getRole());
+        u2.setAvatarUrl(resolveUserAvatarUrl(targetUser.getAvatarMediaId()));
         u2.setOnline(presenceService.isUserOnline(targetUser.getId()));
         u2.setLastSeen(targetUser.getLastSeen());
 
@@ -212,6 +215,7 @@ public class ConversationService implements IConversationService {
                                         u.getRole(),
                                         member.getRole() != null ? member.getRole().name() : null
                                 );
+                                dto.setAvatarUrl(resolveUserAvatarUrl(u.getAvatarMediaId()));
                                 dto.setOnline(presenceService.isUserOnline(u.getId()));
                                 dto.setLastSeen(u.getLastSeen());
                                 return dto;
@@ -309,6 +313,7 @@ public class ConversationService implements IConversationService {
                             u.getRole(),
                             member.getRole() != null ? member.getRole().name() : null
                     );
+                    dto.setAvatarUrl(resolveUserAvatarUrl(u.getAvatarMediaId()));
                     dto.setOnline(presenceService.isUserOnline(u.getId()));
                     dto.setLastSeen(u.getLastSeen());
                     return dto;
@@ -447,6 +452,7 @@ public class ConversationService implements IConversationService {
                             u.getRole(),
                             m.getRole() != null ? m.getRole().name() : null
                     );
+                    dto.setAvatarUrl(resolveUserAvatarUrl(u.getAvatarMediaId()));
                     dto.setOnline(presenceService.isUserOnline(u.getId()));
                     dto.setLastSeen(u.getLastSeen());
                     return dto;
@@ -577,6 +583,7 @@ public class ConversationService implements IConversationService {
                             u.getRole(),
                             m.getRole() != null ? m.getRole().name() : null
                     );
+                    dto.setAvatarUrl(resolveUserAvatarUrl(u.getAvatarMediaId()));
                     dto.setOnline(presenceService.isUserOnline(u.getId()));
                     dto.setLastSeen(u.getLastSeen());
                     return dto;
@@ -829,6 +836,7 @@ public class ConversationService implements IConversationService {
                             u.getRole(),
                             member.getRole() != null ? member.getRole().name() : null
                     );
+                    dto.setAvatarUrl(resolveUserAvatarUrl(u.getAvatarMediaId()));
                     dto.setOnline(presenceService.isUserOnline(u.getId()));
                     dto.setLastSeen(u.getLastSeen());
                     return dto;
@@ -860,5 +868,12 @@ public class ConversationService implements IConversationService {
                 conv.getUsername(),
                 conv.isPublic()
         );
+    }
+
+    private String resolveUserAvatarUrl(UUID avatarMediaId) {
+        if (avatarMediaId == null) return null;
+        return mediaRepository.findById(avatarMediaId)
+                .map(Media::getUrl)
+                .orElse(null);
     }
 }

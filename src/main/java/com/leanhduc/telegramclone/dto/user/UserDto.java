@@ -18,6 +18,7 @@ public class UserDto {
     private String email;
     private String bio;
     private UUID avatarMediaId;
+    private String avatarUrl;
     private RoleUser role;
     private String groupRole;
     private boolean online;
