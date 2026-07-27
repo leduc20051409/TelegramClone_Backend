@@ -14,7 +14,13 @@ import com.leanhduc.telegramclone.model.*;
 import com.leanhduc.telegramclone.model.enums.ConversationRole;
 import com.leanhduc.telegramclone.model.enums.ConversationType;
 import com.leanhduc.telegramclone.repository.*;
+import com.leanhduc.telegramclone.dto.invite.CreateInviteLinkRequest;
 import com.leanhduc.telegramclone.service.Presence.IPresenceService;
+import com.leanhduc.telegramclone.service.invite.IConversationInviteLinkService;
+import com.leanhduc.telegramclone.dto.websocket.MemberEventResponse;
+import com.leanhduc.telegramclone.dto.websocket.WsEnvelope;
+import com.leanhduc.telegramclone.model.enums.MessageType;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -39,6 +45,8 @@ public class ConversationService implements IConversationService {
     private final MessageMediaRepository messageMediaRepository;
     private final MessagePostViewRepository messagePostViewRepository;
     private final IPresenceService presenceService;
+    private final IConversationInviteLinkService inviteLinkService;
+    private final SimpMessagingTemplate messagingTemplate;
 
     @Override
     @Transactional
@@ -138,6 +146,15 @@ public class ConversationService implements IConversationService {
             }
         }
 
+        // Auto-generate a Primary Private Invite Link for newly created Group or Channel
+        CreateInviteLinkRequest defaultInviteLinkReq = new CreateInviteLinkRequest(
+                "Primary Link",
+                null,
+                0,
+                true
+        );
+        inviteLinkService.createInviteLink(creatorUserId, conversation.getId(), defaultInviteLinkReq);
+
         return mapToConversationResponse(conversation, creatorUserId);
     }
 
@@ -165,6 +182,11 @@ public class ConversationService implements IConversationService {
                 memberRepository.save(newOwner);
             }
         }
+
+        User user = member.getUser();
+        String displayName = user.getDisplayName() != null && !user.getDisplayName().isBlank()
+                ? user.getDisplayName() : user.getUsername();
+        broadcastMemberEventAndSystemMessage(conversation, user, "MEMBER_LEFT", displayName + " left the group");
     }
 
     @Override
@@ -208,6 +230,18 @@ public class ConversationService implements IConversationService {
                     .build();
             memberRepository.save(newMember);
         }
+
+        User requesterUser = getUserOrThrow(requesterId);
+        String targetName = targetUser.getDisplayName() != null && !targetUser.getDisplayName().isBlank()
+                ? targetUser.getDisplayName() : targetUser.getUsername();
+        String requesterName = requesterUser.getDisplayName() != null && !requesterUser.getDisplayName().isBlank()
+                ? requesterUser.getDisplayName() : requesterUser.getUsername();
+
+        String systemText = isSelfJoin || requesterId.equals(targetUserId)
+                ? targetName + " joined the group"
+                : requesterName + " added " + targetName + " to the group";
+
+        broadcastMemberEventAndSystemMessage(conversation, targetUser, "MEMBER_JOINED", systemText);
 
         return mapToConversationResponse(conversation, requesterId);
     }
@@ -319,6 +353,15 @@ public class ConversationService implements IConversationService {
 
         targetMember.setLeftAt(java.time.Instant.now());
         memberRepository.save(targetMember);
+
+        User targetUser = targetMember.getUser();
+        User requester = getUserOrThrow(requesterId);
+        String targetName = targetUser.getDisplayName() != null && !targetUser.getDisplayName().isBlank()
+                ? targetUser.getDisplayName() : targetUser.getUsername();
+        String requesterName = requester.getDisplayName() != null && !requester.getDisplayName().isBlank()
+                ? requester.getDisplayName() : requester.getUsername();
+
+        broadcastMemberEventAndSystemMessage(conversation, targetUser, "MEMBER_LEFT", requesterName + " removed " + targetName + " from the group");
     }
 
     @Override
@@ -563,5 +606,46 @@ public class ConversationService implements IConversationService {
             responses.add(messageMapper.toResponse(message, mediaDtos, viewCount));
         }
         return responses;
+    }
+
+    private void broadcastMemberEventAndSystemMessage(
+            Conversation conversation,
+            User eventUser,
+            String eventType,
+            String systemText
+    ) {
+        Message systemMsg = Message.builder()
+                .conversation(conversation)
+                .sender(eventUser)
+                .messageType(MessageType.SYSTEM)
+                .body(systemText)
+                .build();
+        systemMsg = messageRepository.save(systemMsg);
+
+        ChatMessageResponse msgResponse = messageMapper.toResponse(systemMsg, List.of(), null);
+        WsEnvelope<ChatMessageResponse> msgEnvelope = WsEnvelope.of("NEW_MESSAGE", msgResponse);
+
+        MemberEventResponse memberData = new MemberEventResponse(
+                conversation.getId(),
+                eventUser.getId(),
+                eventUser.getUsername(),
+                eventUser.getDisplayName(),
+                null
+        );
+        WsEnvelope<MemberEventResponse> eventEnvelope = WsEnvelope.of(eventType, memberData);
+
+        List<UUID> memberIds = getConversationMemberIds(conversation.getId());
+        Set<UUID> targetIds = new HashSet<>(memberIds);
+        targetIds.add(eventUser.getId());
+
+        if (conversation.getType() == ConversationType.CHANNEL && targetIds.size() > 1000) {
+            messagingTemplate.convertAndSend("/topic/channels/" + conversation.getId(), msgEnvelope);
+            messagingTemplate.convertAndSend("/topic/channels/" + conversation.getId(), eventEnvelope);
+        } else {
+            for (UUID mId : targetIds) {
+                messagingTemplate.convertAndSendToUser(mId.toString(), "/queue/chat", msgEnvelope);
+                messagingTemplate.convertAndSendToUser(mId.toString(), "/queue/chat", eventEnvelope);
+            }
+        }
     }
 }

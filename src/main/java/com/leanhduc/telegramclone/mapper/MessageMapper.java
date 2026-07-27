@@ -13,12 +13,21 @@ import java.util.List;
 public interface MessageMapper {
     @Mapping(source = "conversation.id", target = "conversationId")
     @Mapping(source = "sender.id", target = "senderId")
+    @Mapping(target = "senderName", expression = "java(mapSenderName(message.getSender()))")
     @Mapping(source = "body", target = "message")
     @Mapping(target = "media", ignore = true)
     @Mapping(target = "viewCount", ignore = true)
     @Mapping(target = "replyTo", expression = "java(mapReplyTo(message.getReplyTo()))")
     @Mapping(target = "reactions", expression = "java(mapReactions(message.getReactions()))")
     ChatMessageResponse toResponse(Message message);
+
+    default String mapSenderName(com.leanhduc.telegramclone.model.User sender) {
+        if (sender == null) return "Unknown";
+        if (sender.getDisplayName() != null && !sender.getDisplayName().isBlank()) {
+            return sender.getDisplayName();
+        }
+        return sender.getUsername();
+    }
 
     default ReplyToDto mapReplyTo(Message replyTo) {
         if (replyTo == null) return null;
@@ -62,6 +71,7 @@ public interface MessageMapper {
                 base.id(),
                 base.conversationId(),
                 base.senderId(),
+                base.senderName(),
                 base.message(),
                 base.createdAt(),
                 media,

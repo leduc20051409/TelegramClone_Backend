@@ -14,10 +14,19 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.leanhduc.telegramclone.dto.message.ChatMessageResponse;
+import com.leanhduc.telegramclone.dto.websocket.MemberEventResponse;
+import com.leanhduc.telegramclone.dto.websocket.WsEnvelope;
+import com.leanhduc.telegramclone.mapper.MessageMapper;
+import com.leanhduc.telegramclone.model.enums.MessageType;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
+
 import java.security.SecureRandom;
 import java.time.Instant;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -31,6 +40,9 @@ public class ConversationInviteLinkService implements IConversationInviteLinkSer
     private final UserRepository userRepository;
     private final MediaRepository mediaRepository;
     private final InviteLinkMapper inviteLinkMapper;
+    private final MessageRepository messageRepository;
+    private final MessageMapper messageMapper;
+    private final SimpMessagingTemplate messagingTemplate;
 
     private final SecureRandom secureRandom = new SecureRandom();
 
@@ -72,7 +84,9 @@ public class ConversationInviteLinkService implements IConversationInviteLinkSer
                 .build();
 
         inviteLink = inviteLinkRepository.save(inviteLink);
-        return inviteLinkMapper.toResponse(inviteLink);
+        InviteLinkResponse response = inviteLinkMapper.toResponse(inviteLink);
+        broadcastInviteLinkUpdated(conversationId, response);
+        return response;
     }
 
     private record ResolvedInviteTarget(
@@ -224,8 +238,9 @@ public class ConversationInviteLinkService implements IConversationInviteLinkSer
             memberRepository.save(newMember);
         }
 
+        InviteLinkResponse response;
         if (target.isPublicUsernameFlow()) {
-            return new InviteLinkResponse(
+            response = new InviteLinkResponse(
                     0L,
                     conversationId,
                     conversation.getUsername(),
@@ -244,8 +259,12 @@ public class ConversationInviteLinkService implements IConversationInviteLinkSer
             ConversationInviteLink inviteLink = target.inviteLink();
             inviteLink.setCurrentUses(inviteLink.getCurrentUses() + 1);
             inviteLink = inviteLinkRepository.save(inviteLink);
-            return inviteLinkMapper.toResponse(inviteLink);
+            response = inviteLinkMapper.toResponse(inviteLink);
+            broadcastInviteLinkUpdated(conversationId, response);
         }
+
+        broadcastJoinEvents(conversation, targetUser, target.isPublicUsernameFlow() ? null : inviteCode);
+        return response;
     }
 
     @Override
@@ -260,7 +279,9 @@ public class ConversationInviteLinkService implements IConversationInviteLinkSer
         inviteLink.setRevoked(true);
         inviteLink = inviteLinkRepository.save(inviteLink);
 
-        return inviteLinkMapper.toResponse(inviteLink);
+        InviteLinkResponse response = inviteLinkMapper.toResponse(inviteLink);
+        broadcastInviteLinkUpdated(inviteLink.getConversation().getId(), response);
+        return response;
     }
 
     @Override
@@ -314,5 +335,59 @@ public class ConversationInviteLinkService implements IConversationInviteLinkSer
             sb.append(chars.charAt(secureRandom.nextInt(chars.length())));
         }
         return sb.toString();
+    }
+
+    private void broadcastInviteLinkUpdated(UUID conversationId, InviteLinkResponse response) {
+        WsEnvelope<InviteLinkResponse> envelope = WsEnvelope.of("INVITE_LINK_UPDATED", response);
+        List<UUID> memberIds = memberRepository.findByConversationIdAndLeftAtIsNull(conversationId).stream()
+                .map(m -> m.getUser().getId())
+                .toList();
+        for (UUID memberId : memberIds) {
+            messagingTemplate.convertAndSendToUser(memberId.toString(), "/queue/chat", envelope);
+        }
+    }
+
+    private void broadcastJoinEvents(Conversation conversation, User targetUser, String inviteCode) {
+        String displayName = targetUser.getDisplayName() != null && !targetUser.getDisplayName().isBlank()
+                ? targetUser.getDisplayName() : targetUser.getUsername();
+        String systemText = inviteCode != null
+                ? displayName + " joined the group via invite link"
+                : displayName + " joined the group";
+
+        Message systemMsg = Message.builder()
+                .conversation(conversation)
+                .sender(targetUser)
+                .messageType(MessageType.SYSTEM)
+                .body(systemText)
+                .build();
+        systemMsg = messageRepository.save(systemMsg);
+
+        ChatMessageResponse msgResponse = messageMapper.toResponse(systemMsg, List.of(), null);
+        WsEnvelope<ChatMessageResponse> msgEnvelope = WsEnvelope.of("NEW_MESSAGE", msgResponse);
+
+        MemberEventResponse memberData = new MemberEventResponse(
+                conversation.getId(),
+                targetUser.getId(),
+                targetUser.getUsername(),
+                targetUser.getDisplayName(),
+                null
+        );
+        WsEnvelope<MemberEventResponse> eventEnvelope = WsEnvelope.of("MEMBER_JOINED", memberData);
+
+        List<UUID> memberIds = memberRepository.findByConversationIdAndLeftAtIsNull(conversation.getId()).stream()
+                .map(m -> m.getUser().getId())
+                .toList();
+        Set<UUID> targetIds = new HashSet<>(memberIds);
+        targetIds.add(targetUser.getId());
+
+        if (conversation.getType() == ConversationType.CHANNEL && targetIds.size() > 1000) {
+            messagingTemplate.convertAndSend("/topic/channels/" + conversation.getId(), msgEnvelope);
+            messagingTemplate.convertAndSend("/topic/channels/" + conversation.getId(), eventEnvelope);
+        } else {
+            for (UUID mId : targetIds) {
+                messagingTemplate.convertAndSendToUser(mId.toString(), "/queue/chat", msgEnvelope);
+                messagingTemplate.convertAndSendToUser(mId.toString(), "/queue/chat", eventEnvelope);
+            }
+        }
     }
 }
