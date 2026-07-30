@@ -1,464 +1,178 @@
-# Chat API Documentation
+# Complete Chat & Messaging API Specification
 
-## Scope
-
-This document describes the currently implemented chat-related REST and WebSocket APIs.
-
-- Conversation management
-- Message history
-- Real-time message delivery
-- Read receipts
-- Media upload flow used by chat messages
+## Overview
+This document specifies the REST and WebSocket STOMP API contracts for conversations, messaging, member management, invite links, reactions, and media handling.
 
 ---
 
-## WebSocket Connection
+## 1. WebSocket Protocol & Authentication
 
-### Endpoint
-```text
-/ws
-```
-
-### Protocol
-- STOMP over WebSocket
-- SockJS endpoint is enabled on the same `/ws` path
-
-### Authentication
-- JWT is required for authenticated chat operations
-- The client sends the token in the STOMP `CONNECT` frame header:
-
-```text
-Authorization: Bearer <JWT_TOKEN>
-```
-
-- The server extracts the authenticated user from the JWT and stores it in `Principal`
-- `senderId` is never accepted from the client payload
-
-### Destination Prefixes
-- App destination prefix: `/app`
-- User destination prefix: `/user`
-- Personal queue used by chat events: `/user/queue/chat`
+### Endpoint & Setup
+- **URL Path:** `/ws`
+- **Protocols Supported:** STOMP over WebSocket, SockJS fallback enabled on `/ws`
+- **Header Authentication:** JWT token sent in STOMP `CONNECT` frame:
+  ```text
+  Authorization: Bearer <JWT_TOKEN>
+  ```
+- **Destination Prefixes:**
+  - Client publish prefix: `/app`
+  - User queue prefix: `/user`
+  - Personal user event queue: `/user/queue/chat`
+  - Public channel topic: `/topic/channels/{conversationId}`
 
 ---
 
-## REST API - Conversation Management
+## 2. WebSocket Event Envelope & Events
 
-### 1. Get or Create Private Conversation
+All WebSocket events pushed to `/user/queue/chat` (or channel topics) use the standardized `WsEnvelope<T>` envelope:
 
-#### Endpoint
-```text
-POST /api/conversations/private/{targetUserId}
-```
-
-**Authentication:** Required
-
-#### Path Parameters
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `targetUserId` | UUID | Target user ID |
-
-#### Request Headers
-```text
-Authorization: Bearer <JWT_TOKEN>
-```
-
-#### Response (200 OK)
 ```json
 {
-  "id": "550e8400-e29b-41d4-a716-446655440000",
-  "type": "PRIVATE",
-  "title": null,
-  "createdAt": "2026-03-06T10:30:45Z"
+  "event": "EVENT_TYPE",
+  "timestamp": 1760000000000,
+  "data": { ... }
 }
 ```
 
-#### Behavior
-- If a private conversation already exists between the current user and `targetUserId`, the existing conversation is returned
-- Otherwise a new private conversation is created and both users are added as members
-- Repeated calls with the same pair of users are effectively idempotent
-
-#### Error Responses
-| Status | Error | Description |
-|--------|-------|-------------|
-| 400 | Bad Request | Invalid UUID format or attempting to chat with yourself |
-| 401 | Unauthorized | JWT missing or invalid |
-| 404 | USER_NOT_FOUND | Target user does not exist |
+### Supported Event Types:
+- `NEW_MESSAGE`: Delivered when a new text/media message is sent.
+- `MESSAGES_READ`: Delivered when a member marks messages as read.
+- `TYPING`: Broadcast when a user starts or stops typing.
+- `MESSAGE_EDITED`: Delivered when a message text is updated.
+- `MESSAGE_DELETED`: Delivered when a message is soft-deleted.
+- `MESSAGE_PINNED`: Delivered when a message is pinned in a conversation.
+- `MESSAGE_UNPINNED`: Delivered when a message is unpinned.
+- `CONVERSATION_UPDATED`: Delivered when group/channel title, description, or avatar changes.
 
 ---
 
-### 2. Get All Conversations for Current User
+## 3. WebSocket Destinations
 
-#### Endpoint
-```text
-GET /api/conversations
-```
-
-**Authentication:** Required
-
-#### Response (200 OK)
-```json
-[
+### 3.1 Send Message
+- **Destination:** `/app/chat.send`
+- **Payload:**
+  ```json
   {
-    "id": "550e8400-e29b-41d4-a716-446655440000",
-    "type": "PRIVATE",
-    "title": null,
-    "createdAt": "2026-03-06T10:30:45Z"
+    "conversationId": "550e8400-e29b-41d4-a716-446655440000",
+    "message": "Hello world",
+    "mediaIds": ["6e0d5749-7b0d-4f0a-9ac0-c6c4fc7a1001"],
+    "replyToMessageId": 120
   }
-]
-```
+  ```
 
-#### Error Responses
-| Status | Error | Description |
-|--------|-------|-------------|
-| 401 | Unauthorized | JWT missing or invalid |
-
----
-
-## REST API - Message History
-
-### Get Message History
-
-#### Endpoint
-```text
-GET /api/messages/{conversationId}?cursor={lastMessageId}&size={size}
-```
-
-**Authentication:** Required
-
-#### Query Parameters
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `cursor` | Long | Last message ID from the previous page, optional |
-| `size` | int | Page size, default `50` |
-
-#### Response (200 OK)
-```json
-[
+### 3.2 Read Receipt
+- **Destination:** `/app/chat.read`
+- **Payload:**
+  ```json
   {
-    "id": 120,
     "conversationId": "550e8400-e29b-41d4-a716-446655440000",
-    "senderId": "770e8400-e29b-41d4-a716-446655440002",
-    "message": "Hello",
-    "createdAt": "2026-03-06T10:30:45Z",
-    "media": [
-      {
-        "id": "6e0d5749-7b0d-4f0a-9ac0-c6c4fc7a1001",
-        "url": "https://storage.example.com/chat/file.png",
-        "mimeType": "image/png",
-        "fileName": "file.png",
-        "fileSize": 24567
-      }
-    ]
+    "lastReadMessageId": 125
   }
-]
-```
+  ```
 
-#### Behavior
-- If `cursor` is omitted, the newest page is returned
-- If `cursor` is provided, messages with `id < cursor` are returned
-- The current implementation uses message ID based pagination
-- The response may include media attachments per message
-
-#### Error Responses
-| Status | Error | Description |
-|--------|-------|-------------|
-| 401 | Unauthorized | JWT missing or invalid |
-| 403 | NOT_IN_CONVERSATION | User is not a member of the conversation |
-
-Note:
-- The service checks membership before loading history
-- The current implementation does not explicitly return `404` for a non-member requesting a missing conversation; membership validation is the primary guard
-
----
-
-## REST API - Media Upload For Chat Messages
-
-Upload media first, then reference returned media IDs in the chat send payload.
-
-### Upload Temporary Media
-
-#### Endpoint
-```text
-POST /api/media/upload
-```
-
-**Authentication:** Required
-
-**Content-Type:** `multipart/form-data`
-
-#### Request
-- Form field: `file`
-
-#### Response
-- Returns `UploadResponseDto`
-- Use the returned media ID in `mediaIds` when sending a chat message
-
-### Delete Temporary Media
-
-#### Endpoint
-```text
-DELETE /api/media/{mediaId}
-```
-
-**Authentication:** Required
-
-#### Behavior
-- Deletes a temporary uploaded file owned by the current user
-
-#### Chat Media Rules
-- `mediaIds` are optional in chat messages
-- All referenced media must belong to the sender
-- Duplicate media IDs are rejected
-- Only temporary media can be attached to a message
-- Attached media becomes active after a successful send
-
----
-
-## WebSocket - Message Sending
-
-### Send Message
-
-#### Destination
-```text
-/app/chat.send
-```
-
-#### Request Payload
-```json
-{
-  "conversationId": "550e8400-e29b-41d4-a716-446655440000",
-  "message": "Hello, how are you?",
-  "mediaIds": [
-    "6e0d5749-7b0d-4f0a-9ac0-c6c4fc7a1001"
-  ]
-}
-```
-
-#### Field Descriptions
-- `conversationId` (UUID, required): Conversation ID
-- `message` (string, optional by current implementation): Text body
-- `mediaIds` (UUID array, optional): Uploaded media IDs to attach
-
-#### Notes
-- A text-only message may omit `mediaIds`
-- A file message uses one or more `mediaIds`
-- The current implementation does not enforce `@NotBlank` validation on `message`
-- The sender is derived from `Principal`
-- The sender must be a member of the conversation
-
----
-
-## WebSocket - Message Receiving
-
-### Subscribe Destination
-```text
-/user/queue/chat
-```
-
-**Subscription Type:** Personal user queue
-
-### Event Envelope
-All chat WebSocket events use this envelope:
-
-```json
-{
-  "event": "NEW_MESSAGE",
-  "timestamp": 1760000000000,
-  "data": {}
-}
-```
-
-#### Envelope Fields
-- `event` (string): Event type
-- `timestamp` (number): Server time in Unix epoch milliseconds
-- `data` (object): Event payload
-
-### `NEW_MESSAGE` Event
-
-```json
-{
-  "event": "NEW_MESSAGE",
-  "timestamp": 1760000000000,
-  "data": {
-    "id": 121,
+### 3.3 Typing Indicator
+- **Destination:** `/app/chat.typing`
+- **Payload:**
+  ```json
+  {
     "conversationId": "550e8400-e29b-41d4-a716-446655440000",
-    "senderId": "770e8400-e29b-41d4-a716-446655440002",
-    "message": "Hello, how are you?",
-    "createdAt": "2026-03-06T10:30:45Z",
-    "media": [
-      {
-        "id": "6e0d5749-7b0d-4f0a-9ac0-c6c4fc7a1001",
-        "url": "https://storage.example.com/chat/file.png",
-        "mimeType": "image/png",
-        "fileName": "file.png",
-        "fileSize": 24567
-      }
-    ]
+    "isTyping": true
   }
-}
-```
-
-#### `NEW_MESSAGE` Payload Fields
-- `id` (Long): Message ID
-- `conversationId` (UUID): Conversation ID
-- `senderId` (UUID): Sender user ID
-- `message` (string): Message body
-- `createdAt` (ISO 8601 datetime): Creation time
-- `media` (array): Attached media metadata
-
-#### Delivery Behavior
-- The server sends the event to each conversation member on `/user/queue/chat`
-- The sender also receives the event
+  ```
 
 ---
 
-## WebSocket - Read Receipts
+## 4. REST API - Conversation Management (`/api/conversations`)
 
-### Send Read Receipt
+### 4.1 Get or Create Private Chat
+- **POST** `/api/conversations/private/{targetUserId}`
+- **Response:** `200 OK` -> `ConversationResponse`
 
-#### Destination
-```text
-/app/chat.read
-```
-
-#### Request Payload
-```json
-{
-  "conversationId": "550e8400-e29b-41d4-a716-446655440000",
-  "lastReadMessageId": 120
-}
-```
-
-#### Field Descriptions
-- `conversationId` (UUID, required): Conversation ID
-- `lastReadMessageId` (Long, required): Highest message ID read by the current user
-
-### `MESSAGES_READ` Event
-
-```json
-{
-  "event": "MESSAGES_READ",
-  "timestamp": 1760000000000,
-  "data": {
-    "conversationId": "550e8400-e29b-41d4-a716-446655440000",
-    "lastReadMessageId": 120
+### 4.2 Create Group Chat
+- **POST** `/api/conversations/group`
+- **Request Body:**
+  ```json
+  {
+    "title": "Development Team",
+    "description": "Project discussion",
+    "memberIds": ["user-uuid-1", "user-uuid-2"]
   }
-}
-```
+  ```
+- **Response:** `200 OK` -> `ConversationResponse`
 
-#### Delivery Behavior
-- Read receipt events are sent to other conversation members only
-- The reader does not receive their own `MESSAGES_READ` event
-- The user must be a member of the conversation
+### 4.3 Get User Conversations
+- **GET** `/api/conversations`
+- **Response:** `200 OK` -> `List<ConversationResponse>`
 
----
-
-## Error Handling
-
-### REST Errors
-REST endpoints use the global exception response shape:
-
-```json
-{
-  "timestamp": "2026-04-12T10:15:30.123",
-  "status": 403,
-  "error": "NOT_IN_CONVERSATION",
-  "message": "You are not a member of this conversation"
-}
-```
-
-Common chat-related business errors:
-
-| Status | Error | Meaning |
-|--------|-------|---------|
-| 400 | CANNOT_CHAT_WITH_YOURSELF | User tried to create a private conversation with self |
-| 400 | DUPLICATE_MEDIA | Repeated media ID in one message |
-| 401 | Unauthorized | Missing or invalid authentication |
-| 403 | NOT_IN_CONVERSATION | User is not a member of the conversation |
-| 403 | MEDIA_NOT_ACCESSIBLE | Media does not belong to sender or is not attachable |
-| 404 | USER_NOT_FOUND | Target user does not exist |
-| 404 | CONVERSATION_NOT_FOUND | Conversation does not exist during message send |
-
-### WebSocket Errors
-- Chat operations can fail with the same business rules as REST
-- The current codebase does not define a documented custom WebSocket error envelope in this module
-- Do not assume a stable `ERROR` event payload contract until it is implemented explicitly
-
----
-
-## Transaction Notes
-
-- `saveMessage` is transactional in the service layer
-- Message persistence and media attachment persistence occur in the same transactional flow
-- `getMessageHistory` is transactional read-only
-- `markMessagesAsRead` is implemented, but this document does not claim an explicit transactional guarantee for it
-- This document also does not claim post-commit-only WebSocket broadcasting because that behavior is not explicitly enforced by the current controller/service structure
-
----
-
-## Example Flow
-
-### 1. Upload Media
-```bash
-curl -X POST http://localhost:8080/api/media/upload \
-  -H "Authorization: Bearer <JWT_TOKEN>" \
-  -F "file=@image.png"
-```
-
-### 2. Connect To WebSocket
-```text
-Endpoint: /ws
-STOMP CONNECT header:
-Authorization: Bearer <JWT_TOKEN>
-```
-
-### 3. Send Message
-```text
-Destination: /app/chat.send
-Payload:
-{
-  "conversationId": "550e8400-e29b-41d4-a716-446655440000",
-  "message": "See attachment",
-  "mediaIds": ["6e0d5749-7b0d-4f0a-9ac0-c6c4fc7a1001"]
-}
-```
-
-### 4. Receive Event
-```text
-Subscribe: /user/queue/chat
-```
-
-```json
-{
-  "event": "NEW_MESSAGE",
-  "timestamp": 1760000000000,
-  "data": {
-    "id": 121,
-    "conversationId": "550e8400-e29b-41d4-a716-446655440000",
-    "senderId": "770e8400-e29b-41d4-a716-446655440002",
-    "message": "See attachment",
-    "createdAt": "2026-03-06T10:30:45Z",
-    "media": [
-      {
-        "id": "6e0d5749-7b0d-4f0a-9ac0-c6c4fc7a1001",
-        "url": "https://storage.example.com/chat/file.png",
-        "mimeType": "image/png",
-        "fileName": "file.png",
-        "fileSize": 24567
-      }
-    ]
+### 4.4 Update Conversation Info
+- **PUT** `/api/conversations/{conversationId}`
+- **Request Body:**
+  ```json
+  {
+    "title": "New Title",
+    "description": "Updated description",
+    "avatarMediaId": "media-uuid"
   }
-}
-```
+  ```
+- **Response:** `200 OK` -> `ConversationResponse` (Broadcasts `CONVERSATION_UPDATED`)
+
+### 4.5 Member & Role Management
+- **POST** `/api/conversations/{conversationId}/members`: Add user to group.
+- **POST** `/api/conversations/{conversationId}/join`: Join public conversation.
+- **POST** `/api/conversations/{conversationId}/leave`: Leave conversation.
+- **DELETE** `/api/conversations/{conversationId}/members/{userId}`: Remove member (Admin/Owner only).
+- **PUT** `/api/conversations/{conversationId}/members/{userId}/role`: Change role (`MEMBER`, `ADMIN`, `OWNER`).
+- **PUT** `/api/conversations/{conversationId}/members/me/mute?isMuted=true`: Mute/unmute notifications.
+
+### 4.6 Message Pinning
+- **POST** `/api/conversations/{conversationId}/pin/{messageId}`: Pin message (Broadcasts `MESSAGE_PINNED` & `NEW_MESSAGE` system notification).
+- **DELETE** `/api/conversations/{conversationId}/unpin/{messageId}`: Unpin message (Broadcasts `MESSAGE_UNPINNED`).
+
+### 4.7 Public Search
+- **GET** `/api/conversations/search?query={keyword}`: Search public groups/channels.
+- **GET** `/api/conversations/by-username/{username}`: Find public conversation by custom username.
 
 ---
 
-## Not Yet Documented Here
+## 5. REST API - Message Operations (`/api/messages`)
 
-The following features are not documented as stable chat API contracts in this file:
+### 5.1 Get Chat History
+- **GET** `/api/messages/{conversationId}?cursor={lastMessageId}&size=50`
+- **Response:** `200 OK` -> `List<ChatMessageResponse>` (Cursor pagination by message ID).
 
-- Group chat creation and management
-- Message editing and deletion
-- Message reactions and replies
-- Typing indicators
-- A custom WebSocket error contract
+### 5.2 Edit Message
+- **PUT** `/api/messages/{messageId}`
+- **Request Body:** `{"message": "New content"}`
+- **Response:** `200 OK` -> `ChatMessageResponse` (Broadcasts `MESSAGE_EDITED`).
+
+### 5.3 Delete Message
+- **DELETE** `/api/messages/{messageId}`
+- **Response:** `204 No Content` (Broadcasts `MESSAGE_DELETED`).
+
+### 5.4 Search Messages
+- **GET** `/api/messages/{conversationId}/search?query={text}&date={YYYY-MM-DD}`
+- **Response:** `200 OK` -> `List<ChatMessageResponse>`
+
+---
+
+## 6. REST API - Reactions (`/api/messages/{messageId}/reactions`)
+
+- **POST** `/api/messages/{messageId}/reactions?reaction=👍`: Add/toggle emoji reaction.
+- **DELETE** `/api/messages/{messageId}/reactions`: Remove emoji reaction.
+
+---
+
+## 7. REST API - Invite Links (`/api/invite-links`)
+
+- **POST** `/api/invite-links/generate`: Create dynamic invite link (with expiration date & usage limit).
+- **GET** `/api/invite-links/{conversationId}`: List active invite links for conversation.
+- **DELETE** `/api/invite-links/{linkId}`: Revoke an invite link.
+- **GET** `/api/invite-links/info/{token}`: Preview conversation info before joining.
+- **POST** `/api/invite-links/join/{token}`: Join conversation via link token.
+
+---
+
+## 8. REST API - Media Upload (`/api/media`)
+
+- **POST** `/api/media/upload`: Upload file (`multipart/form-data`) -> returns `UploadResponseDto` with status `TEMP`.
+- **DELETE** `/api/media/{mediaId}`: Delete uploaded temporary media.
