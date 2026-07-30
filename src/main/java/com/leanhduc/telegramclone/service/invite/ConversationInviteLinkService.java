@@ -3,6 +3,7 @@ package com.leanhduc.telegramclone.service.invite;
 import com.leanhduc.telegramclone.dto.invite.CreateInviteLinkRequest;
 import com.leanhduc.telegramclone.dto.invite.InviteLinkInfoResponse;
 import com.leanhduc.telegramclone.dto.invite.InviteLinkResponse;
+import com.leanhduc.telegramclone.dto.invite.UpdateInviteLinkRequest;
 import com.leanhduc.telegramclone.exception.BusinessException;
 import com.leanhduc.telegramclone.exception.ErrorCode;
 import com.leanhduc.telegramclone.mapper.InviteLinkMapper;
@@ -82,6 +83,44 @@ public class ConversationInviteLinkService implements IConversationInviteLinkSer
                 .currentUses(0)
                 .isRevoked(false)
                 .build();
+
+        inviteLink = inviteLinkRepository.save(inviteLink);
+        InviteLinkResponse response = inviteLinkMapper.toResponse(inviteLink);
+        broadcastInviteLinkUpdated(conversationId, response);
+        return response;
+    }
+
+    @Override
+    @Transactional
+    public InviteLinkResponse updateInviteLink(UUID requesterId, Long inviteLinkId, UpdateInviteLinkRequest request) {
+        ConversationInviteLink inviteLink = inviteLinkRepository.findById(inviteLinkId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.INVITE_LINK_NOT_FOUND));
+
+        if (inviteLink.isRevoked()) {
+            throw new BusinessException(ErrorCode.INVITE_LINK_REVOKED);
+        }
+
+        UUID conversationId = inviteLink.getConversation().getId();
+        checkAdminOrOwnerPermission(requesterId, conversationId);
+
+        if (request.isPrimary() != null && request.isPrimary()) {
+            if (!inviteLink.isPrimary()) {
+                inviteLinkRepository.demotePrimaryLinks(conversationId);
+                inviteLink.setPrimary(true);
+            }
+        } else if (request.isPrimary() != null && !request.isPrimary()) {
+            inviteLink.setPrimary(false);
+        }
+
+        if (request.name() != null) {
+            inviteLink.setName(request.name());
+        }
+
+        inviteLink.setExpireAt(request.expireAt());
+
+        if (request.memberLimit() != null) {
+            inviteLink.setMemberLimit(request.memberLimit());
+        }
 
         inviteLink = inviteLinkRepository.save(inviteLink);
         InviteLinkResponse response = inviteLinkMapper.toResponse(inviteLink);

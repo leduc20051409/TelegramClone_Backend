@@ -3,6 +3,7 @@ package com.leanhduc.telegramclone.controller;
 import com.leanhduc.telegramclone.dto.invite.CreateInviteLinkRequest;
 import com.leanhduc.telegramclone.dto.invite.InviteLinkInfoResponse;
 import com.leanhduc.telegramclone.dto.invite.InviteLinkResponse;
+import com.leanhduc.telegramclone.dto.invite.UpdateInviteLinkRequest;
 import com.leanhduc.telegramclone.service.invite.IConversationInviteLinkService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -27,6 +28,17 @@ public class ConversationInviteLinkController {
     ) {
         UUID requesterId = UUID.fromString(principal.getName());
         InviteLinkResponse response = inviteLinkService.createInviteLink(requesterId, id, request);
+        return ResponseEntity.ok(response);
+    }
+
+    @PutMapping("/api/invite/{id}")
+    public ResponseEntity<InviteLinkResponse> updateInviteLink(
+            @PathVariable Long id,
+            @RequestBody UpdateInviteLinkRequest request,
+            Principal principal
+    ) {
+        UUID requesterId = UUID.fromString(principal.getName());
+        InviteLinkResponse response = inviteLinkService.updateInviteLink(requesterId, id, request);
         return ResponseEntity.ok(response);
     }
 
