@@ -2,6 +2,7 @@ package com.leanhduc.telegramclone.service.conversation;
 
 import com.leanhduc.telegramclone.dto.conversation.ConversationResponse;
 import com.leanhduc.telegramclone.dto.conversation.CreateGroupRequest;
+import com.leanhduc.telegramclone.dto.conversation.DiscussionGroupInfoResponse;
 import com.leanhduc.telegramclone.dto.conversation.UpdateConversationRequest;
 import com.leanhduc.telegramclone.dto.media.MediaAttachmentDto;
 import com.leanhduc.telegramclone.dto.message.ChatMessageResponse;
@@ -556,7 +557,8 @@ public class ConversationService implements IConversationService {
                 unreadCount,
                 getPinnedMessagesForConversation(conv.getId()),
                 conv.getUsername(),
-                conv.isPublic()
+                conv.isPublic(),
+                conv.getLinkedDiscussionGroupId()
         );
     }
 
@@ -647,5 +649,104 @@ public class ConversationService implements IConversationService {
                 messagingTemplate.convertAndSendToUser(mId.toString(), "/queue/chat", eventEnvelope);
             }
         }
+    }
+
+    @Override
+    @Transactional
+    public DiscussionGroupInfoResponse linkDiscussionGroup(UUID channelId, UUID groupId, UUID requesterId) {
+        if (channelId.equals(groupId)) {
+            throw new BusinessException(ErrorCode.CANNOT_LINK_SAME_CONVERSATION);
+        }
+
+        Conversation channelConv = getConversationOrThrow(channelId);
+        Conversation groupConv = getConversationOrThrow(groupId);
+
+        if (channelConv.getType() != ConversationType.CHANNEL || groupConv.getType() != ConversationType.GROUP) {
+            throw new BusinessException(ErrorCode.INVALID_CONVERSATION_TYPES);
+        }
+
+        ConversationMember channelMember = getActiveMemberOrThrow(channelId, requesterId);
+        if (channelMember.getRole() != ConversationRole.OWNER && channelMember.getRole() != ConversationRole.ADMIN) {
+            throw new BusinessException(ErrorCode.NOT_ADMIN_OF_BOTH_CONVERSATIONS);
+        }
+
+        ConversationMember groupMember = getActiveMemberOrThrow(groupId, requesterId);
+        if (groupMember.getRole() != ConversationRole.OWNER && groupMember.getRole() != ConversationRole.ADMIN) {
+            throw new BusinessException(ErrorCode.NOT_ADMIN_OF_BOTH_CONVERSATIONS);
+        }
+
+        if (channelConv.getLinkedDiscussionGroupId() != null) {
+            throw new BusinessException(ErrorCode.CHANNEL_ALREADY_HAS_DISCUSSION);
+        }
+
+        Optional<Conversation> existingLink = conversationRepository.findByLinkedDiscussionGroupId(groupId);
+        if (existingLink.isPresent()) {
+            throw new BusinessException(ErrorCode.GROUP_ALREADY_LINKED);
+        }
+
+        channelConv.setLinkedDiscussionGroupId(groupId);
+        conversationRepository.save(channelConv);
+
+        int memberCount = memberRepository.findByConversationIdAndLeftAtIsNull(groupId).size();
+        String groupAvatarUrl = resolveMediaUrl(groupConv.getAvatarMediaId());
+
+        return new DiscussionGroupInfoResponse(
+                channelId,
+                groupId,
+                groupConv.getTitle(),
+                groupAvatarUrl,
+                memberCount
+        );
+    }
+
+    @Override
+    @Transactional
+    public void unlinkDiscussionGroup(UUID channelId, UUID requesterId) {
+        Conversation channelConv = getConversationOrThrow(channelId);
+        if (channelConv.getType() != ConversationType.CHANNEL) {
+            throw new BusinessException(ErrorCode.INVALID_CONVERSATION_TYPES);
+        }
+
+        ConversationMember channelMember = getActiveMemberOrThrow(channelId, requesterId);
+        if (channelMember.getRole() != ConversationRole.OWNER && channelMember.getRole() != ConversationRole.ADMIN) {
+            throw new BusinessException(ErrorCode.ADMIN_REQUIRED);
+        }
+
+        if (channelConv.getLinkedDiscussionGroupId() == null) {
+            throw new BusinessException(ErrorCode.DISCUSSION_NOT_LINKED);
+        }
+
+        channelConv.setLinkedDiscussionGroupId(null);
+        conversationRepository.save(channelConv);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public DiscussionGroupInfoResponse getLinkedDiscussionGroup(UUID channelId, UUID requesterId) {
+        Conversation channelConv = getConversationOrThrow(channelId);
+        if (channelConv.getType() != ConversationType.CHANNEL) {
+            throw new BusinessException(ErrorCode.INVALID_CONVERSATION_TYPES);
+        }
+
+        if (!channelConv.isPublic()) {
+            getActiveMemberOrThrow(channelId, requesterId);
+        }
+
+        UUID linkedGroupId = channelConv.getLinkedDiscussionGroupId();
+        if (linkedGroupId == null) {
+            throw new BusinessException(ErrorCode.DISCUSSION_NOT_LINKED);
+        }
+
+        Conversation groupConv = getConversationOrThrow(linkedGroupId);
+        int memberCount = memberRepository.findByConversationIdAndLeftAtIsNull(linkedGroupId).size();
+        String groupAvatarUrl = resolveMediaUrl(groupConv.getAvatarMediaId());
+
+        return new DiscussionGroupInfoResponse(
+                channelId,
+                linkedGroupId,
+                groupConv.getTitle(),
+                groupAvatarUrl,
+                memberCount
+        );
     }
 }

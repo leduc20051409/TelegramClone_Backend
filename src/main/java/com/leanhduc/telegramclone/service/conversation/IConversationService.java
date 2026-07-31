@@ -1,8 +1,8 @@
 package com.leanhduc.telegramclone.service.conversation;
 
 import com.leanhduc.telegramclone.dto.conversation.ConversationResponse;
-
 import com.leanhduc.telegramclone.dto.conversation.CreateGroupRequest;
+import com.leanhduc.telegramclone.dto.conversation.DiscussionGroupInfoResponse;
 import com.leanhduc.telegramclone.dto.conversation.UpdateConversationRequest;
 import com.leanhduc.telegramclone.model.enums.ConversationRole;
 import com.leanhduc.telegramclone.model.enums.ConversationType;
@@ -24,4 +24,7 @@ public interface IConversationService {
     void deleteConversation(UUID requesterId, UUID conversationId);
     List<ConversationResponse> searchPublicConversations(String query);
     ConversationResponse getPublicConversationByUsername(String username);
+    DiscussionGroupInfoResponse linkDiscussionGroup(UUID channelId, UUID groupId, UUID requesterId);
+    void unlinkDiscussionGroup(UUID channelId, UUID requesterId);
+    DiscussionGroupInfoResponse getLinkedDiscussionGroup(UUID channelId, UUID requesterId);
 }

@@ -61,6 +61,8 @@ create table conversations (
   description text,  
   avatar_media_id uuid,  
   is_public boolean not null default false,  
+  username text unique,  
+  linked_discussion_group_id uuid unique,  
   metadata jsonb,  
   created_by uuid,  
   created_at timestamptz default now(),  
@@ -70,7 +72,8 @@ create table conversations (
 create index idx_conversations_created_by on conversations (created_by);  
 alter table conversations  
   add constraint conversations_avatar_media_fkey foreign key (avatar_media_id) references media (id),  
-  add constraint conversations_created_by_fkey foreign key (created_by) references users (id);  
+  add constraint conversations_created_by_fkey foreign key (created_by) references users (id),  
+  add constraint conversations_linked_group_fkey foreign key (linked_discussion_group_id) references conversations (id);  
   
 -- conversation_members (pk conversation_id, user_id)  
 create table conversation_members (  
@@ -241,6 +244,17 @@ create table message_post_views (
   view_count int8 not null default 0,
   updated_at timestamptz default now()
 );
+
+-- discussion_thread_links (1 channel post <-> 1 group thread root)
+create table discussion_thread_links (
+  id uuid primary key,
+  channel_post_message_id int8 not null unique references messages(id) on delete cascade,
+  group_root_message_id int8 not null unique references messages(id) on delete cascade,
+  comment_count int4 not null default 0,
+  created_at timestamptz default now()
+);
+create index idx_dtl_channel_post on discussion_thread_links(channel_post_message_id);
+create index idx_dtl_group_root on discussion_thread_links(group_root_message_id);
 
 -- example autovacuum tuning for high-update candidate tables  
 alter table unread_counters set (autovacuum_vacuum_scale_factor = 0.01, autovacuum_vacuum_threshold = 50);  

@@ -40,6 +40,9 @@ public class Conversation {
     @Column(unique = true)
     private String username;
 
+    @Column(name = "linked_discussion_group_id", unique = true)
+    private UUID linkedDiscussionGroupId;
+
     @Column(name = "created_by")
     private UUID createdBy;
 

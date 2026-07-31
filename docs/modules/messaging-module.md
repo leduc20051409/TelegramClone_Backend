@@ -42,3 +42,12 @@
 ### 7. Transactional Consistency & WebSocket Envelopes
 - All message operations (saving, media binding, pinning) are wrapped in `@Transactional`.
 - All real-time WebSocket events are standardized using `WsEnvelope<T>` (`event`, `timestamp`, `data`).
+
+### 8. Discussion Group (Channel ↔ Group Linking)
+- **1-to-1 Linking:** A Channel (`CHANNEL`) can be linked with at most one Group (`GROUP`). A Group can be linked with at most one Channel. Managed by Channel/Group Admins/Owners.
+- **Auto-Forwarding:** New posts on the Channel are automatically copied into the linked Group as a thread root (`forwarded_from_conversation_id`, `forwarded_from_user_id`), creating a `DiscussionThreadLink` mapping record.
+- **Comment Count & Real-time Sync:** Replies to a thread root in the Group increment `comment_count` on `DiscussionThreadLink` atomically and broadcast `COMMENT_COUNT_UPDATED` WS events to both the Channel topic and Group members.
+- **Telegram Edge Case Compliance:**
+  - Deleting a channel post leaves the discussion thread in the group intact.
+  - Editing a channel post does not overwrite or re-forward to the group thread.
+  - Unlinking or re-linking a group leaves existing discussion threads in their original groups.

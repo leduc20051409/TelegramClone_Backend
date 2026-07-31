@@ -2,12 +2,14 @@ package com.leanhduc.telegramclone.mapper;
 
 import com.leanhduc.telegramclone.dto.media.MediaAttachmentDto;
 import com.leanhduc.telegramclone.dto.message.ChatMessageResponse;
+import com.leanhduc.telegramclone.dto.message.ForwardedFromDto;
 import com.leanhduc.telegramclone.dto.message.ReplyToDto;
 import com.leanhduc.telegramclone.model.Message;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 
 import java.util.List;
+import java.util.UUID;
 
 @Mapper(componentModel = "spring")
 public interface MessageMapper {
@@ -19,6 +21,7 @@ public interface MessageMapper {
     @Mapping(target = "viewCount", ignore = true)
     @Mapping(target = "replyTo", expression = "java(mapReplyTo(message.getReplyTo()))")
     @Mapping(target = "reactions", expression = "java(mapReactions(message.getReactions()))")
+    @Mapping(target = "forwardedFrom", expression = "java(mapForwardedFrom(message))")
     ChatMessageResponse toResponse(Message message);
 
     default String mapSenderName(com.leanhduc.telegramclone.model.User sender) {
@@ -27,6 +30,21 @@ public interface MessageMapper {
             return sender.getDisplayName();
         }
         return sender.getUsername();
+    }
+
+    default ForwardedFromDto mapForwardedFrom(Message message) {
+        if (message == null) return null;
+        if (message.getForwardedFromConversation() == null && message.getForwardedFromUser() == null) {
+            return null;
+        }
+        UUID convId = message.getForwardedFromConversation() != null ? message.getForwardedFromConversation().getId() : null;
+        String convTitle = message.getForwardedFromConversation() != null ? message.getForwardedFromConversation().getTitle() : null;
+        UUID avatarMediaId = message.getForwardedFromConversation() != null ? message.getForwardedFromConversation().getAvatarMediaId() : null;
+        String convAvatar = avatarMediaId != null ? avatarMediaId.toString() : null;
+        UUID senderId = message.getForwardedFromUser() != null ? message.getForwardedFromUser().getId() : null;
+        String senderName = message.getForwardedFromUser() != null ? mapSenderName(message.getForwardedFromUser()) : null;
+
+        return new ForwardedFromDto(convId, convTitle, convAvatar, senderId, senderName);
     }
 
     default ReplyToDto mapReplyTo(Message replyTo) {
@@ -66,6 +84,10 @@ public interface MessageMapper {
     }
 
     default ChatMessageResponse toResponse(Message message, List<MediaAttachmentDto> media, Long viewCount) {
+        return toResponse(message, media, viewCount, null);
+    }
+
+    default ChatMessageResponse toResponse(Message message, List<MediaAttachmentDto> media, Long viewCount, Integer commentCount) {
         ChatMessageResponse base = toResponse(message);
         return new ChatMessageResponse(
                 base.id(),
@@ -80,7 +102,9 @@ public interface MessageMapper {
                 viewCount,
                 base.messageType(),
                 base.replyTo(),
-                base.reactions()
+                base.reactions(),
+                commentCount,
+                base.forwardedFrom()
         );
     }
 }

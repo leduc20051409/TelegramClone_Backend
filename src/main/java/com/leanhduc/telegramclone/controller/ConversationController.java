@@ -2,7 +2,10 @@ package com.leanhduc.telegramclone.controller;
 
 import com.leanhduc.telegramclone.dto.conversation.CreateGroupRequest;
 import com.leanhduc.telegramclone.dto.conversation.AddMemberRequest;
+import com.leanhduc.telegramclone.dto.conversation.DiscussionGroupInfoResponse;
+import com.leanhduc.telegramclone.dto.conversation.LinkDiscussionGroupRequest;
 import com.leanhduc.telegramclone.dto.conversation.UpdateConversationRequest;
+import jakarta.validation.Valid;
 import com.leanhduc.telegramclone.dto.conversation.UpdateRoleRequest;
 import com.leanhduc.telegramclone.dto.conversation.ConversationResponse;
 import com.leanhduc.telegramclone.service.conversation.IConversationService;
@@ -254,5 +257,36 @@ public class ConversationController {
     @GetMapping("/by-username/{username}")
     public ResponseEntity<ConversationResponse> getPublicConversationByUsername(@PathVariable String username) {
         return ResponseEntity.ok(conversationService.getPublicConversationByUsername(username));
+    }
+
+    @PostMapping("/{channelId}/discussion/link")
+    public ResponseEntity<DiscussionGroupInfoResponse> linkDiscussionGroup(
+            @PathVariable UUID channelId,
+            @Valid @RequestBody LinkDiscussionGroupRequest request,
+            Principal principal
+    ) {
+        UUID requesterId = UUID.fromString(principal.getName());
+        DiscussionGroupInfoResponse response = conversationService.linkDiscussionGroup(channelId, request.groupId(), requesterId);
+        return ResponseEntity.ok(response);
+    }
+
+    @DeleteMapping("/{channelId}/discussion/unlink")
+    public ResponseEntity<Void> unlinkDiscussionGroup(
+            @PathVariable UUID channelId,
+            Principal principal
+    ) {
+        UUID requesterId = UUID.fromString(principal.getName());
+        conversationService.unlinkDiscussionGroup(channelId, requesterId);
+        return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/{channelId}/discussion")
+    public ResponseEntity<DiscussionGroupInfoResponse> getLinkedDiscussionGroup(
+            @PathVariable UUID channelId,
+            Principal principal
+    ) {
+        UUID requesterId = UUID.fromString(principal.getName());
+        DiscussionGroupInfoResponse response = conversationService.getLinkedDiscussionGroup(channelId, requesterId);
+        return ResponseEntity.ok(response);
     }
 }

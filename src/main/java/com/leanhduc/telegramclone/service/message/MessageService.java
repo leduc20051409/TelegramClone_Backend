@@ -3,11 +3,14 @@ package com.leanhduc.telegramclone.service.message;
 import com.leanhduc.telegramclone.dto.message.ChatMessageRequest;
 import com.leanhduc.telegramclone.dto.message.ChatMessageResponse;
 import com.leanhduc.telegramclone.dto.message.ChatReadRequest;
+import com.leanhduc.telegramclone.dto.message.CommentCountUpdateDto;
+import com.leanhduc.telegramclone.dto.message.DiscussionThreadResponse;
 import com.leanhduc.telegramclone.dto.message.EditMessageRequest;
 import com.leanhduc.telegramclone.dto.message.PinMessageResult;
 import com.leanhduc.telegramclone.dto.media.MediaAttachmentDto;
 import com.leanhduc.telegramclone.exception.BusinessException;
 import com.leanhduc.telegramclone.exception.ErrorCode;
+import java.util.Optional;
 import com.leanhduc.telegramclone.mapper.MessageMapper;
 import com.leanhduc.telegramclone.model.*;
 import com.leanhduc.telegramclone.model.enums.MessageType;
@@ -22,6 +25,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.data.redis.core.RedisTemplate;
 import java.util.concurrent.TimeUnit;
+
+import com.leanhduc.telegramclone.dto.websocket.WsEnvelope;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -47,6 +53,8 @@ public class MessageService implements IMessageService {
     private final MessagePostViewRepository messagePostViewRepository;
     private final RedisTemplate<String, String> redisTemplate;
     private final PinnedMessageRepository pinnedMessageRepository;
+    private final DiscussionThreadLinkRepository discussionThreadLinkRepository;
+    private final SimpMessagingTemplate messagingTemplate;
 
     @Override
     @Transactional
@@ -124,7 +132,97 @@ public class MessageService implements IMessageService {
 
         List<MediaAttachmentDto> mediaDtos = buildMediaDtos(mediaIds, mediaById);
         Long viewCount = conversation.getType() == com.leanhduc.telegramclone.model.enums.ConversationType.CHANNEL ? 0L : null;
-        return messageMapper.toResponse(message, mediaDtos, viewCount);
+        Integer initialCommentCount = null;
+
+        // Task 4: Discussion group auto-forward logic for Channel post
+        if (conversation.getType() == ConversationType.CHANNEL && conversation.getLinkedDiscussionGroupId() != null) {
+            Conversation linkedGroup = conversationRepository.findById(conversation.getLinkedDiscussionGroupId()).orElse(null);
+            if (linkedGroup != null) {
+                Message groupRootMessage = Message.builder()
+                        .conversation(linkedGroup)
+                        .sender(sender)
+                        .body(request.message())
+                        .messageType(messageType)
+                        .deleted(false)
+                        .forwardedFromConversation(conversation)
+                        .forwardedFromUser(sender)
+                        .forwardedAt(java.time.Instant.now())
+                        .build();
+                groupRootMessage = messageRepository.save(groupRootMessage);
+
+                if (!mediaIds.isEmpty()) {
+                    List<MessageMedia> groupMediaList = new ArrayList<>();
+                    for (int i = 0; i < mediaIds.size(); i++) {
+                        UUID mediaId = mediaIds.get(i);
+                        Media media = mediaById.get(mediaId);
+                        MessageMediaId mmId = new MessageMediaId(groupRootMessage.getId(), mediaId);
+                        MessageMedia groupMedia = MessageMedia.builder()
+                                .id(mmId)
+                                .message(groupRootMessage)
+                                .media(media)
+                                .ordinal(i)
+                                .build();
+                        groupMediaList.add(groupMedia);
+                    }
+                    messageMediaRepository.saveAll(groupMediaList);
+                }
+
+                DiscussionThreadLink threadLink = DiscussionThreadLink.builder()
+                        .channelPostMessage(message)
+                        .groupRootMessage(groupRootMessage)
+                        .commentCount(0)
+                        .build();
+                discussionThreadLinkRepository.save(threadLink);
+                initialCommentCount = 0;
+
+                // Broadcast NEW_MESSAGE to group members
+                ChatMessageResponse groupRootResponse = messageMapper.toResponse(groupRootMessage, mediaDtos, null, null);
+                WsEnvelope<ChatMessageResponse> groupEnvelope = WsEnvelope.of("NEW_MESSAGE", groupRootResponse);
+                List<ConversationMember> groupMembers = memberRepository.findByConversationIdAndLeftAtIsNull(linkedGroup.getId());
+                for (ConversationMember gm : groupMembers) {
+                    messagingTemplate.convertAndSendToUser(gm.getUser().getId().toString(), "/queue/chat", groupEnvelope);
+                }
+            }
+        }
+
+        // Task 5: Discussion group comment count update logic for Group reply
+        if (conversation.getType() == ConversationType.GROUP && replyTo != null) {
+            DiscussionThreadLink threadLink = findThreadLinkByMessage(replyTo);
+            if (threadLink != null) {
+                discussionThreadLinkRepository.incrementCommentCount(threadLink.getId());
+                int updatedCount = threadLink.getCommentCount() + 1;
+
+                CommentCountUpdateDto updateDto = new CommentCountUpdateDto(
+                        threadLink.getChannelPostMessage().getId(),
+                        threadLink.getChannelPostMessage().getConversation().getId(),
+                        threadLink.getGroupRootMessage().getId(),
+                        conversation.getId(),
+                        updatedCount
+                );
+                WsEnvelope<CommentCountUpdateDto> countEnvelope = WsEnvelope.of("COMMENT_COUNT_UPDATED", updateDto);
+
+                // Broadcast to channel topic and group members
+                messagingTemplate.convertAndSend("/topic/channels/" + threadLink.getChannelPostMessage().getConversation().getId(), countEnvelope);
+                List<ConversationMember> groupMembers = memberRepository.findByConversationIdAndLeftAtIsNull(conversation.getId());
+                for (ConversationMember gm : groupMembers) {
+                    messagingTemplate.convertAndSendToUser(gm.getUser().getId().toString(), "/queue/chat", countEnvelope);
+                }
+            }
+        }
+
+        return messageMapper.toResponse(message, mediaDtos, viewCount, initialCommentCount);
+    }
+
+    private DiscussionThreadLink findThreadLinkByMessage(Message msg) {
+        Message current = msg;
+        while (current != null) {
+            Optional<DiscussionThreadLink> linkOpt = discussionThreadLinkRepository.findByGroupRootMessageId(current.getId());
+            if (linkOpt.isPresent()) {
+                return linkOpt.get();
+            }
+            current = current.getReplyTo();
+        }
+        return null;
     }
 
     @Override
@@ -182,10 +280,18 @@ public class MessageService implements IMessageService {
 
         boolean isChannel = !messages.isEmpty() && messages.get(0).getConversation().getType() == com.leanhduc.telegramclone.model.enums.ConversationType.CHANNEL;
         Map<Long, Long> viewCountByMessageId = new HashMap<>();
+        Map<Long, Integer> commentCountByMessageId = new HashMap<>();
         if (isChannel) {
             List<MessagePostView> postViews = messagePostViewRepository.findAllById(messageIds);
             viewCountByMessageId = postViews.stream()
                     .collect(Collectors.toMap(MessagePostView::getMessageId, MessagePostView::getViewCount));
+
+            List<DiscussionThreadLink> threadLinks = discussionThreadLinkRepository.findByChannelPostMessageIdIn(messageIds);
+            for (DiscussionThreadLink link : threadLinks) {
+                if (link.getChannelPostMessage() != null) {
+                    commentCountByMessageId.put(link.getChannelPostMessage().getId(), link.getCommentCount());
+                }
+            }
         }
 
         List<ChatMessageResponse> responses = new ArrayList<>(messages.size());
@@ -196,7 +302,8 @@ public class MessageService implements IMessageService {
                     .map(this::toMediaDto)
                     .toList();
             Long viewCount = isChannel ? viewCountByMessageId.getOrDefault(message.getId(), 0L) : null;
-            responses.add(messageMapper.toResponse(message, mediaDtos, viewCount));
+            Integer commentCount = isChannel ? commentCountByMessageId.getOrDefault(message.getId(), 0) : null;
+            responses.add(messageMapper.toResponse(message, mediaDtos, viewCount, commentCount));
         }
         return responses;
     }
@@ -507,5 +614,54 @@ public class MessageService implements IMessageService {
         }
 
         return toResponsesWithMedia(messages);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public DiscussionThreadResponse getDiscussionThread(UUID currentUserId, Long channelPostId, Long cursor, int size) {
+        Message channelPost = messageRepository.findById(channelPostId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.MESSAGE_NOT_FOUND));
+
+        Conversation channel = channelPost.getConversation();
+        if (channel.getType() != ConversationType.CHANNEL) {
+            throw new BusinessException(ErrorCode.INVALID_CONVERSATION_TYPES);
+        }
+
+        if (!channel.isPublic()) {
+            ConversationMember member = memberRepository.findById(new ConversationMemberId(channel.getId(), currentUserId))
+                    .orElse(null);
+            if (member == null || member.getLeftAt() != null) {
+                throw new BusinessException(ErrorCode.NOT_IN_CONVERSATION);
+            }
+        }
+
+        DiscussionThreadLink threadLink = discussionThreadLinkRepository.findByChannelPostMessageId(channelPostId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.DISCUSSION_NOT_LINKED));
+
+        Message groupRootMessage = threadLink.getGroupRootMessage();
+        Conversation group = groupRootMessage.getConversation();
+
+        int fetchSize = Math.min(Math.max(size, 1), 100);
+        Pageable pageable = PageRequest.of(0, fetchSize);
+
+        List<Message> commentMessages;
+        if (cursor == null || cursor <= 0) {
+            commentMessages = messageRepository.findThreadComments(groupRootMessage.getId(), pageable);
+        } else {
+            commentMessages = messageRepository.findThreadCommentsAfterId(groupRootMessage.getId(), cursor, pageable);
+        }
+
+        List<ChatMessageResponse> commentResponses = toResponsesWithMedia(commentMessages);
+        ChatMessageResponse rootMessageResponse = toResponsesWithMedia(List.of(groupRootMessage)).stream().findFirst().orElse(null);
+
+        return new DiscussionThreadResponse(
+                channelPostId,
+                channel.getId(),
+                groupRootMessage.getId(),
+                group.getId(),
+                threadLink.getCommentCount(),
+                rootMessageResponse,
+                commentResponses
+        );
     }
 }

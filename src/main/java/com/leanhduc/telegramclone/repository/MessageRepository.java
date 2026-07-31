@@ -58,4 +58,10 @@ public interface MessageRepository extends JpaRepository<Message, Long> {
             Instant endDate,
             Pageable pageable
     );
+
+    @Query("SELECT m FROM Message m WHERE m.replyTo.id = :groupRootMessageId AND m.deleted = false ORDER BY m.id ASC")
+    List<Message> findThreadComments(@Param("groupRootMessageId") Long groupRootMessageId, Pageable pageable);
+
+    @Query("SELECT m FROM Message m WHERE m.replyTo.id = :groupRootMessageId AND m.deleted = false AND m.id > :lastCommentId ORDER BY m.id ASC")
+    List<Message> findThreadCommentsAfterId(@Param("groupRootMessageId") Long groupRootMessageId, @Param("lastCommentId") Long lastCommentId, Pageable pageable);
 }

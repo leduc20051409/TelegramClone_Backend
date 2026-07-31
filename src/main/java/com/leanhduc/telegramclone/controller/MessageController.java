@@ -1,6 +1,7 @@
 package com.leanhduc.telegramclone.controller;
 
 import com.leanhduc.telegramclone.dto.message.ChatMessageResponse;
+import com.leanhduc.telegramclone.dto.message.DiscussionThreadResponse;
 import com.leanhduc.telegramclone.dto.message.EditMessageRequest;
 import com.leanhduc.telegramclone.dto.websocket.DeleteMessageResponse;
 import com.leanhduc.telegramclone.dto.websocket.WsEnvelope;
@@ -33,6 +34,18 @@ public class MessageController {
         UUID currentUserId = UUID.fromString(principal.getName());
         List<ChatMessageResponse> messages = messageService.getMessageHistory(conversationId, currentUserId, cursor, size);
         return ResponseEntity.ok(messages);
+    }
+
+    @GetMapping("/{channelPostId}/discussion-thread")
+    public ResponseEntity<DiscussionThreadResponse> getDiscussionThread(
+            @PathVariable Long channelPostId,
+            @RequestParam(required = false) Long cursor,
+            @RequestParam(defaultValue = "50") int size,
+            Principal principal
+    ) {
+        UUID currentUserId = UUID.fromString(principal.getName());
+        DiscussionThreadResponse response = messageService.getDiscussionThread(currentUserId, channelPostId, cursor, size);
+        return ResponseEntity.ok(response);
     }
 
     @PutMapping("/{messageId}")

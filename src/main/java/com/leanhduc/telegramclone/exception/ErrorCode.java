@@ -51,7 +51,15 @@ public enum ErrorCode {
     INVITE_LINK_LIMIT_REACHED("Invite link limit has been reached", HttpStatus.GONE),
     INVITE_LINK_REVOKED("Invite link has been revoked", HttpStatus.GONE),
     ALREADY_IN_CONVERSATION("User is already a member of this conversation", HttpStatus.CONFLICT),
-    ADMIN_REQUIRED("Only conversation owners or admins can perform this action", HttpStatus.FORBIDDEN);
+    ADMIN_REQUIRED("Only conversation owners or admins can perform this action", HttpStatus.FORBIDDEN),
+
+    // ================= DISCUSSION GROUP =================
+    CANNOT_LINK_SAME_CONVERSATION("Cannot link a conversation to itself", HttpStatus.BAD_REQUEST),
+    INVALID_CONVERSATION_TYPES("Source must be a CHANNEL and target must be a GROUP", HttpStatus.BAD_REQUEST),
+    GROUP_ALREADY_LINKED("This Group is already linked to another Channel", HttpStatus.CONFLICT),
+    CHANNEL_ALREADY_HAS_DISCUSSION("This Channel is already linked to a Group", HttpStatus.CONFLICT),
+    NOT_ADMIN_OF_BOTH_CONVERSATIONS("You must be an owner or admin of both the Channel and the Group", HttpStatus.FORBIDDEN),
+    DISCUSSION_NOT_LINKED("Channel does not have a linked discussion group", HttpStatus.NOT_FOUND);
 
     private final String message;
     private final HttpStatus status;

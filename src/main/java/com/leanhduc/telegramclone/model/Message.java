@@ -51,6 +51,17 @@ public class Message {
     @JoinColumn(name = "reply_to_message_id")
     private Message replyTo;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "forwarded_from_user_id")
+    private User forwardedFromUser;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "forwarded_from_conversation_id")
+    private Conversation forwardedFromConversation;
+
+    @Column(name = "forwarded_at")
+    private Instant forwardedAt;
+
     @OneToMany(mappedBy = "message", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
     private List<MessageReaction> reactions = new ArrayList<>();

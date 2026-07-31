@@ -4,6 +4,7 @@ import com.leanhduc.telegramclone.dto.message.ChatMessageRequest;
 import com.leanhduc.telegramclone.dto.message.ChatMessageResponse;
 import com.leanhduc.telegramclone.dto.message.ChatReadRequest;
 
+import com.leanhduc.telegramclone.dto.message.DiscussionThreadResponse;
 import com.leanhduc.telegramclone.dto.message.EditMessageRequest;
 
 import java.util.List;
@@ -29,4 +30,6 @@ public interface IMessageService {
     void unpinMessage(UUID userId, UUID conversationId, Long messageId);
 
     List<ChatMessageResponse> searchMessages(UUID conversationId, UUID currentUserId, String query, String dateStr);
+
+    DiscussionThreadResponse getDiscussionThread(UUID currentUserId, Long channelPostId, Long cursor, int size);
 }

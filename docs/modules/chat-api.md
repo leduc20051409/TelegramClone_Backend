@@ -43,6 +43,7 @@ All WebSocket events pushed to `/user/queue/chat` (or channel topics) use the st
 - `MESSAGE_PINNED`: Delivered when a message is pinned in a conversation.
 - `MESSAGE_UNPINNED`: Delivered when a message is unpinned.
 - `CONVERSATION_UPDATED`: Delivered when group/channel title, description, or avatar changes.
+- `COMMENT_COUNT_UPDATED`: Broadcast when a new comment is posted in a linked discussion thread.
 
 ---
 
@@ -176,3 +177,40 @@ All WebSocket events pushed to `/user/queue/chat` (or channel topics) use the st
 
 - **POST** `/api/media/upload`: Upload file (`multipart/form-data`) -> returns `UploadResponseDto` with status `TEMP`.
 - **DELETE** `/api/media/{mediaId}`: Delete uploaded temporary media.
+
+---
+
+## 9. REST API - Discussion Group (Channel ↔ Group Linking)
+
+### 9.1 Link Discussion Group
+- **POST** `/api/conversations/{channelId}/discussion/link`
+- **Request Body:**
+  ```json
+  {
+    "groupId": "550e8400-e29b-41d4-a716-446655440000"
+  }
+  ```
+- **Response:** `200 OK` -> `DiscussionGroupInfoResponse`
+
+### 9.2 Unlink Discussion Group
+- **DELETE** `/api/conversations/{channelId}/discussion/unlink`
+- **Response:** `204 No Content`
+
+### 9.3 Get Linked Discussion Group Info
+- **GET** `/api/conversations/{channelId}/discussion`
+- **Response:** `200 OK` -> `DiscussionGroupInfoResponse`
+
+### 9.4 Fetch Channel Post Discussion Thread & Comments
+- **GET** `/api/messages/{channelPostId}/discussion-thread?cursor={lastCommentId}&size=50`
+- **Response:** `200 OK` -> `DiscussionThreadResponse`
+  ```json
+  {
+    "channelPostMessageId": 101,
+    "channelId": "uuid-channel",
+    "groupRootMessageId": 201,
+    "groupId": "uuid-group",
+    "commentCount": 5,
+    "groupRootMessage": { ... },
+    "comments": [ ... ]
+  }
+  ```
