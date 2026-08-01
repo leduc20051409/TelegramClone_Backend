@@ -2,7 +2,7 @@ name: Telegram Clone CI
 on:
   push:
     branches:
-      - master
+      - feature/github-actions
 
 jobs:
   build:
