@@ -616,16 +616,19 @@ public class ConversationService implements IConversationService {
             String eventType,
             String systemText
     ) {
-        Message systemMsg = Message.builder()
-                .conversation(conversation)
-                .sender(eventUser)
-                .messageType(MessageType.SYSTEM)
-                .body(systemText)
-                .build();
-        systemMsg = messageRepository.save(systemMsg);
+        if (conversation.getType() != ConversationType.CHANNEL) {
+            Message systemMsg = Message.builder()
+                    .conversation(conversation)
+                    .sender(eventUser)
+                    .messageType(MessageType.SYSTEM)
+                    .body(systemText)
+                    .build();
+            systemMsg = messageRepository.save(systemMsg);
 
-        ChatMessageResponse msgResponse = messageMapper.toResponse(systemMsg, List.of(), null);
-        WsEnvelope<ChatMessageResponse> msgEnvelope = WsEnvelope.of("NEW_MESSAGE", msgResponse);
+            ChatMessageResponse msgResponse = messageMapper.toResponse(systemMsg, List.of(), null);
+            WsEnvelope<ChatMessageResponse> msgEnvelope = WsEnvelope.of("NEW_MESSAGE", msgResponse);
+            broadcastEnvelopeToMembers(conversation, msgEnvelope, eventUser.getId());
+        }
 
         MemberEventResponse memberData = new MemberEventResponse(
                 conversation.getId(),
@@ -635,18 +638,21 @@ public class ConversationService implements IConversationService {
                 null
         );
         WsEnvelope<MemberEventResponse> eventEnvelope = WsEnvelope.of(eventType, memberData);
+        broadcastEnvelopeToMembers(conversation, eventEnvelope, eventUser.getId());
+    }
 
+    private void broadcastEnvelopeToMembers(Conversation conversation, WsEnvelope<?> envelope, UUID eventUserId) {
         List<UUID> memberIds = getConversationMemberIds(conversation.getId());
         Set<UUID> targetIds = new HashSet<>(memberIds);
-        targetIds.add(eventUser.getId());
+        if (eventUserId != null) {
+            targetIds.add(eventUserId);
+        }
 
         if (conversation.getType() == ConversationType.CHANNEL && targetIds.size() > 1000) {
-            messagingTemplate.convertAndSend("/topic/channels/" + conversation.getId(), msgEnvelope);
-            messagingTemplate.convertAndSend("/topic/channels/" + conversation.getId(), eventEnvelope);
+            messagingTemplate.convertAndSend("/topic/channels/" + conversation.getId(), envelope);
         } else {
             for (UUID mId : targetIds) {
-                messagingTemplate.convertAndSendToUser(mId.toString(), "/queue/chat", msgEnvelope);
-                messagingTemplate.convertAndSendToUser(mId.toString(), "/queue/chat", eventEnvelope);
+                messagingTemplate.convertAndSendToUser(mId.toString(), "/queue/chat", envelope);
             }
         }
     }

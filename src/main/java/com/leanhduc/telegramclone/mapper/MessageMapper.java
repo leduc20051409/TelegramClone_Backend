@@ -3,8 +3,11 @@ package com.leanhduc.telegramclone.mapper;
 import com.leanhduc.telegramclone.dto.media.MediaAttachmentDto;
 import com.leanhduc.telegramclone.dto.message.ChatMessageResponse;
 import com.leanhduc.telegramclone.dto.message.ForwardedFromDto;
+import com.leanhduc.telegramclone.dto.message.MessageReactionDto;
 import com.leanhduc.telegramclone.dto.message.ReplyToDto;
 import com.leanhduc.telegramclone.model.Message;
+import com.leanhduc.telegramclone.model.MessageReaction;
+import com.leanhduc.telegramclone.model.User;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 
@@ -24,7 +27,7 @@ public interface MessageMapper {
     @Mapping(target = "forwardedFrom", expression = "java(mapForwardedFrom(message))")
     ChatMessageResponse toResponse(Message message);
 
-    default String mapSenderName(com.leanhduc.telegramclone.model.User sender) {
+    default String mapSenderName(User sender) {
         if (sender == null) return "Unknown";
         if (sender.getDisplayName() != null && !sender.getDisplayName().isBlank()) {
             return sender.getDisplayName();
@@ -59,7 +62,7 @@ public interface MessageMapper {
         return new ReplyToDto(replyTo.getId(), senderName, replyTo.getBody());
     }
 
-    default List<com.leanhduc.telegramclone.dto.message.MessageReactionDto> mapReactions(List<com.leanhduc.telegramclone.model.MessageReaction> reactions) {
+    default List<MessageReactionDto> mapReactions(List<MessageReaction> reactions) {
         if (reactions == null) return List.of();
         return reactions.stream()
                 .map(r -> {
@@ -69,7 +72,7 @@ public interface MessageMapper {
                         username = r.getUser().getUsername();
                         displayName = r.getUser().getDisplayName();
                     }
-                    return new com.leanhduc.telegramclone.dto.message.MessageReactionDto(
+                    return new MessageReactionDto(
                             r.getId().getUserId(),
                             username,
                             displayName,

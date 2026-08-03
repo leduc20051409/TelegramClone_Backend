@@ -21,7 +21,7 @@ public interface DiscussionThreadLinkRepository extends JpaRepository<Discussion
 
     Optional<DiscussionThreadLink> findByGroupRootMessageId(Long groupRootMessageId);
 
-    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Modifying
     @Query("UPDATE DiscussionThreadLink d SET d.commentCount = d.commentCount + 1 WHERE d.id = :id")
     void incrementCommentCount(@Param("id") UUID id);
 }

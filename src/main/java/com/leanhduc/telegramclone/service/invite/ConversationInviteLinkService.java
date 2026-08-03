@@ -387,22 +387,25 @@ public class ConversationInviteLinkService implements IConversationInviteLinkSer
     }
 
     private void broadcastJoinEvents(Conversation conversation, User targetUser, String inviteCode) {
-        String displayName = targetUser.getDisplayName() != null && !targetUser.getDisplayName().isBlank()
-                ? targetUser.getDisplayName() : targetUser.getUsername();
-        String systemText = inviteCode != null
-                ? displayName + " joined the group via invite link"
-                : displayName + " joined the group";
+        if (conversation.getType() != ConversationType.CHANNEL) {
+            String displayName = targetUser.getDisplayName() != null && !targetUser.getDisplayName().isBlank()
+                    ? targetUser.getDisplayName() : targetUser.getUsername();
+            String systemText = inviteCode != null
+                    ? displayName + " joined the group via invite link"
+                    : displayName + " joined the group";
 
-        Message systemMsg = Message.builder()
-                .conversation(conversation)
-                .sender(targetUser)
-                .messageType(MessageType.SYSTEM)
-                .body(systemText)
-                .build();
-        systemMsg = messageRepository.save(systemMsg);
+            Message systemMsg = Message.builder()
+                    .conversation(conversation)
+                    .sender(targetUser)
+                    .messageType(MessageType.SYSTEM)
+                    .body(systemText)
+                    .build();
+            systemMsg = messageRepository.save(systemMsg);
 
-        ChatMessageResponse msgResponse = messageMapper.toResponse(systemMsg, List.of(), null);
-        WsEnvelope<ChatMessageResponse> msgEnvelope = WsEnvelope.of("NEW_MESSAGE", msgResponse);
+            ChatMessageResponse msgResponse = messageMapper.toResponse(systemMsg, List.of(), null);
+            WsEnvelope<ChatMessageResponse> msgEnvelope = WsEnvelope.of("NEW_MESSAGE", msgResponse);
+            broadcastEnvelopeToMembers(conversation, msgEnvelope, targetUser.getId());
+        }
 
         MemberEventResponse memberData = new MemberEventResponse(
                 conversation.getId(),
@@ -412,20 +415,23 @@ public class ConversationInviteLinkService implements IConversationInviteLinkSer
                 null
         );
         WsEnvelope<MemberEventResponse> eventEnvelope = WsEnvelope.of("MEMBER_JOINED", memberData);
+        broadcastEnvelopeToMembers(conversation, eventEnvelope, targetUser.getId());
+    }
 
+    private void broadcastEnvelopeToMembers(Conversation conversation, WsEnvelope<?> envelope, UUID targetUserId) {
         List<UUID> memberIds = memberRepository.findByConversationIdAndLeftAtIsNull(conversation.getId()).stream()
                 .map(m -> m.getUser().getId())
                 .toList();
         Set<UUID> targetIds = new HashSet<>(memberIds);
-        targetIds.add(targetUser.getId());
+        if (targetUserId != null) {
+            targetIds.add(targetUserId);
+        }
 
         if (conversation.getType() == ConversationType.CHANNEL && targetIds.size() > 1000) {
-            messagingTemplate.convertAndSend("/topic/channels/" + conversation.getId(), msgEnvelope);
-            messagingTemplate.convertAndSend("/topic/channels/" + conversation.getId(), eventEnvelope);
+            messagingTemplate.convertAndSend("/topic/channels/" + conversation.getId(), envelope);
         } else {
             for (UUID mId : targetIds) {
-                messagingTemplate.convertAndSendToUser(mId.toString(), "/queue/chat", msgEnvelope);
-                messagingTemplate.convertAndSendToUser(mId.toString(), "/queue/chat", eventEnvelope);
+                messagingTemplate.convertAndSendToUser(mId.toString(), "/queue/chat", envelope);
             }
         }
     }

@@ -189,20 +189,27 @@ public class MessageService implements IMessageService {
         if (conversation.getType() == ConversationType.GROUP && replyTo != null) {
             DiscussionThreadLink threadLink = findThreadLinkByMessage(replyTo);
             if (threadLink != null) {
+                Long channelPostId = threadLink.getChannelPostMessage() != null ? threadLink.getChannelPostMessage().getId() : null;
+                UUID channelConvId = (threadLink.getChannelPostMessage() != null && threadLink.getChannelPostMessage().getConversation() != null)
+                        ? threadLink.getChannelPostMessage().getConversation().getId() : null;
+                Long groupRootId = threadLink.getGroupRootMessage() != null ? threadLink.getGroupRootMessage().getId() : null;
+
                 discussionThreadLinkRepository.incrementCommentCount(threadLink.getId());
                 int updatedCount = threadLink.getCommentCount() + 1;
 
                 CommentCountUpdateDto updateDto = new CommentCountUpdateDto(
-                        threadLink.getChannelPostMessage().getId(),
-                        threadLink.getChannelPostMessage().getConversation().getId(),
-                        threadLink.getGroupRootMessage().getId(),
+                        channelPostId,
+                        channelConvId,
+                        groupRootId,
                         conversation.getId(),
                         updatedCount
                 );
                 WsEnvelope<CommentCountUpdateDto> countEnvelope = WsEnvelope.of("COMMENT_COUNT_UPDATED", updateDto);
 
                 // Broadcast to channel topic and group members
-                messagingTemplate.convertAndSend("/topic/channels/" + threadLink.getChannelPostMessage().getConversation().getId(), countEnvelope);
+                if (channelConvId != null) {
+                    messagingTemplate.convertAndSend("/topic/channels/" + channelConvId, countEnvelope);
+                }
                 List<ConversationMember> groupMembers = memberRepository.findByConversationIdAndLeftAtIsNull(conversation.getId());
                 for (ConversationMember gm : groupMembers) {
                     messagingTemplate.convertAndSendToUser(gm.getUser().getId().toString(), "/queue/chat", countEnvelope);
