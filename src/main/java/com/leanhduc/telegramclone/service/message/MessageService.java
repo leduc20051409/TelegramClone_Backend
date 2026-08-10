@@ -1,5 +1,6 @@
 package com.leanhduc.telegramclone.service.message;
 
+import com.leanhduc.telegramclone.dto.media.MediaAttachmentDto;
 import com.leanhduc.telegramclone.dto.message.ChatMessageRequest;
 import com.leanhduc.telegramclone.dto.message.ChatMessageResponse;
 import com.leanhduc.telegramclone.dto.message.ChatReadRequest;
@@ -7,35 +8,29 @@ import com.leanhduc.telegramclone.dto.message.CommentCountUpdateDto;
 import com.leanhduc.telegramclone.dto.message.DiscussionThreadResponse;
 import com.leanhduc.telegramclone.dto.message.EditMessageRequest;
 import com.leanhduc.telegramclone.dto.message.PinMessageResult;
-import com.leanhduc.telegramclone.dto.media.MediaAttachmentDto;
+import com.leanhduc.telegramclone.dto.websocket.WsEnvelope;
 import com.leanhduc.telegramclone.exception.BusinessException;
 import com.leanhduc.telegramclone.exception.ErrorCode;
-import java.util.Optional;
 import com.leanhduc.telegramclone.mapper.MessageMapper;
 import com.leanhduc.telegramclone.model.*;
-import com.leanhduc.telegramclone.model.enums.MessageType;
-import com.leanhduc.telegramclone.model.enums.MediaStatus;
+import com.leanhduc.telegramclone.model.enums.AdminPermission;
 import com.leanhduc.telegramclone.model.enums.ConversationRole;
 import com.leanhduc.telegramclone.model.enums.ConversationType;
+import com.leanhduc.telegramclone.model.enums.MediaStatus;
+import com.leanhduc.telegramclone.model.enums.MemberPermission;
+import com.leanhduc.telegramclone.model.enums.MessageType;
 import com.leanhduc.telegramclone.repository.*;
+import com.leanhduc.telegramclone.service.conversation.IPermissionService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.data.redis.core.RedisTemplate;
+
+import java.util.*;
 import java.util.concurrent.TimeUnit;
-
-import com.leanhduc.telegramclone.dto.websocket.WsEnvelope;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
-
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
@@ -55,6 +50,7 @@ public class MessageService implements IMessageService {
     private final PinnedMessageRepository pinnedMessageRepository;
     private final DiscussionThreadLinkRepository discussionThreadLinkRepository;
     private final SimpMessagingTemplate messagingTemplate;
+    private final IPermissionService permissionService;
 
     @Override
     @Transactional
@@ -68,10 +64,14 @@ public class MessageService implements IMessageService {
             throw new BusinessException(ErrorCode.NOT_IN_CONVERSATION);
         }
 
-        if (conversation.getType() == ConversationType.CHANNEL &&
-                member.getRole() != ConversationRole.OWNER &&
-                member.getRole() != ConversationRole.ADMIN) {
-            throw new BusinessException(ErrorCode.SUBSCRIBERS_CANNOT_POST);
+        if (conversation.getType() == ConversationType.CHANNEL) {
+            if (!permissionService.hasAdminPermission(member, AdminPermission.POST_MESSAGES)) {
+                throw new BusinessException(ErrorCode.SUBSCRIBERS_CANNOT_POST);
+            }
+        } else if (conversation.getType() == ConversationType.GROUP) {
+            if (!permissionService.hasMemberPermission(member, MemberPermission.SEND_MESSAGES)) {
+                throw new BusinessException(ErrorCode.PERMISSION_DENIED);
+            }
         }
 
         User sender = userRepository.findById(senderId)
@@ -81,6 +81,9 @@ public class MessageService implements IMessageService {
         MessageType messageType = mediaIds.isEmpty() ? MessageType.TEXT : MessageType.FILE;
         Map<UUID, Media> mediaById = Collections.emptyMap();
         if (!mediaIds.isEmpty()) {
+            if (!permissionService.hasMemberPermission(member, MemberPermission.SEND_MEDIA)) {
+                throw new BusinessException(ErrorCode.PERMISSION_DENIED);
+            }
             Set<UUID> uniqueMediaIds = mediaIds.stream().collect(Collectors.toSet());
             if (uniqueMediaIds.size() != mediaIds.size()) {
                 throw new BusinessException(ErrorCode.DUPLICATE_MEDIA);
@@ -131,10 +134,10 @@ public class MessageService implements IMessageService {
         }
 
         List<MediaAttachmentDto> mediaDtos = buildMediaDtos(mediaIds, mediaById);
-        Long viewCount = conversation.getType() == com.leanhduc.telegramclone.model.enums.ConversationType.CHANNEL ? 0L : null;
+        Long viewCount = conversation.getType() == ConversationType.CHANNEL ? 0L : null;
         Integer initialCommentCount = null;
 
-        // Task 4: Discussion group auto-forward logic for Channel post
+        // Discussion group auto-forward logic for Channel post
         if (conversation.getType() == ConversationType.CHANNEL && conversation.getLinkedDiscussionGroupId() != null) {
             Conversation linkedGroup = conversationRepository.findById(conversation.getLinkedDiscussionGroupId()).orElse(null);
             if (linkedGroup != null) {
@@ -185,7 +188,7 @@ public class MessageService implements IMessageService {
             }
         }
 
-        // Task 5: Discussion group comment count update logic for Group reply
+        // Discussion group comment count update logic for Group reply
         if (conversation.getType() == ConversationType.GROUP && replyTo != null) {
             DiscussionThreadLink threadLink = findThreadLinkByMessage(replyTo);
             if (threadLink != null) {
@@ -263,7 +266,7 @@ public class MessageService implements IMessageService {
                         .conversation(conversationRef)
                         .user(userRef)
                         .build());
-        if(counter.getLastReadMessageId() == null || counter.getLastReadMessageId() < request.lastReadMessageId()) {
+        if (counter.getLastReadMessageId() == null || counter.getLastReadMessageId() < request.lastReadMessageId()) {
             counter.setLastReadMessageId(request.lastReadMessageId());
             unreadCounterRepository.save(counter);
         }
@@ -285,7 +288,7 @@ public class MessageService implements IMessageService {
                     .add(messageMedia);
         }
 
-        boolean isChannel = !messages.isEmpty() && messages.get(0).getConversation().getType() == com.leanhduc.telegramclone.model.enums.ConversationType.CHANNEL;
+        boolean isChannel = !messages.isEmpty() && messages.get(0).getConversation().getType() == ConversationType.CHANNEL;
         Map<Long, Long> viewCountByMessageId = new HashMap<>();
         Map<Long, Integer> commentCountByMessageId = new HashMap<>();
         if (isChannel) {
@@ -350,7 +353,11 @@ public class MessageService implements IMessageService {
         }
 
         if (!message.getSender().getId().equals(currentUserId)) {
-            throw new BusinessException(ErrorCode.UNAUTHORIZED_MESSAGE_ACTION);
+            ConversationMember member = memberRepository.findById(new ConversationMemberId(message.getConversation().getId(), currentUserId))
+                    .orElseThrow(() -> new BusinessException(ErrorCode.NOT_IN_CONVERSATION));
+            if (!permissionService.hasAdminPermission(member, AdminPermission.EDIT_MESSAGES)) {
+                throw new BusinessException(ErrorCode.UNAUTHORIZED_MESSAGE_ACTION);
+            }
         }
 
         message.setBody(request.message());
@@ -359,22 +366,21 @@ public class MessageService implements IMessageService {
 
         List<UUID> mediaIds = request.mediaIds();
         if (mediaIds != null) {
-            // Remove old message-media relationships
             messageMediaRepository.deleteByMessageId(messageId);
 
             if (!mediaIds.isEmpty()) {
-                Set<UUID> uniqueMediaIds = new java.util.HashSet<>(mediaIds);
+                Set<UUID> uniqueMediaIds = new HashSet<>(mediaIds);
                 if (uniqueMediaIds.size() != mediaIds.size()) {
                     throw new BusinessException(ErrorCode.DUPLICATE_MEDIA);
                 }
-                List<Media> mediaList = mediaRepository.findByIdInAndOwnerId(new java.util.ArrayList<>(uniqueMediaIds), currentUserId);
+                List<Media> mediaList = mediaRepository.findByIdInAndOwnerId(new ArrayList<>(uniqueMediaIds), currentUserId);
                 if (mediaList.size() != uniqueMediaIds.size()) {
                     throw new BusinessException(ErrorCode.MEDIA_NOT_ACCESSIBLE);
                 }
                 Map<UUID, Media> mediaById = mediaList.stream()
                         .collect(Collectors.toMap(Media::getId, media -> media));
 
-                List<MessageMedia> messageMediaList = new java.util.ArrayList<>();
+                List<MessageMedia> messageMediaList = new ArrayList<>();
                 for (int i = 0; i < mediaIds.size(); i++) {
                     UUID mediaId = mediaIds.get(i);
                     Media media = mediaById.get(mediaId);
@@ -404,7 +410,7 @@ public class MessageService implements IMessageService {
                 .toList();
 
         Long viewCount = null;
-        if (message.getConversation().getType() == com.leanhduc.telegramclone.model.enums.ConversationType.CHANNEL) {
+        if (message.getConversation().getType() == ConversationType.CHANNEL) {
             viewCount = messagePostViewRepository.findById(messageId)
                     .map(MessagePostView::getViewCount)
                     .orElse(0L);
@@ -424,7 +430,11 @@ public class MessageService implements IMessageService {
         }
 
         if (!message.getSender().getId().equals(currentUserId)) {
-            throw new BusinessException(ErrorCode.UNAUTHORIZED_MESSAGE_ACTION);
+            ConversationMember member = memberRepository.findById(new ConversationMemberId(message.getConversation().getId(), currentUserId))
+                    .orElseThrow(() -> new BusinessException(ErrorCode.NOT_IN_CONVERSATION));
+            if (!permissionService.hasAdminPermission(member, AdminPermission.DELETE_MESSAGES)) {
+                throw new BusinessException(ErrorCode.UNAUTHORIZED_MESSAGE_ACTION);
+            }
         }
 
         message.setDeleted(true);
@@ -471,9 +481,14 @@ public class MessageService implements IMessageService {
         Conversation conversation = conversationRepository.findById(conversationId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.CONVERSATION_NOT_FOUND));
 
-        if (conversation.getType() == ConversationType.GROUP || conversation.getType() == ConversationType.CHANNEL) {
-            if (member.getRole() != ConversationRole.OWNER && member.getRole() != ConversationRole.ADMIN) {
-                throw new BusinessException(ErrorCode.UNAUTHORIZED_MESSAGE_ACTION);
+        if (conversation.getType() == ConversationType.GROUP) {
+            if (!permissionService.hasMemberPermission(member, MemberPermission.PIN_MESSAGES) &&
+                !permissionService.hasAdminPermission(member, AdminPermission.PIN_MESSAGES)) {
+                throw new BusinessException(ErrorCode.PERMISSION_DENIED);
+            }
+        } else if (conversation.getType() == ConversationType.CHANNEL) {
+            if (!permissionService.hasAdminPermission(member, AdminPermission.PIN_MESSAGES)) {
+                throw new BusinessException(ErrorCode.PERMISSION_DENIED);
             }
         }
 
@@ -551,9 +566,14 @@ public class MessageService implements IMessageService {
         Conversation conversation = conversationRepository.findById(conversationId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.CONVERSATION_NOT_FOUND));
 
-        if (conversation.getType() == ConversationType.GROUP || conversation.getType() == ConversationType.CHANNEL) {
-            if (member.getRole() != ConversationRole.OWNER && member.getRole() != ConversationRole.ADMIN) {
-                throw new BusinessException(ErrorCode.UNAUTHORIZED_MESSAGE_ACTION);
+        if (conversation.getType() == ConversationType.GROUP) {
+            if (!permissionService.hasMemberPermission(member, MemberPermission.PIN_MESSAGES) &&
+                !permissionService.hasAdminPermission(member, AdminPermission.PIN_MESSAGES)) {
+                throw new BusinessException(ErrorCode.PERMISSION_DENIED);
+            }
+        } else if (conversation.getType() == ConversationType.CHANNEL) {
+            if (!permissionService.hasAdminPermission(member, AdminPermission.PIN_MESSAGES)) {
+                throw new BusinessException(ErrorCode.PERMISSION_DENIED);
             }
         }
 

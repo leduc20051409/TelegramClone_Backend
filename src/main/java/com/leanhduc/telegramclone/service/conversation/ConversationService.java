@@ -1,9 +1,6 @@
 package com.leanhduc.telegramclone.service.conversation;
 
-import com.leanhduc.telegramclone.dto.conversation.ConversationResponse;
-import com.leanhduc.telegramclone.dto.conversation.CreateGroupRequest;
-import com.leanhduc.telegramclone.dto.conversation.DiscussionGroupInfoResponse;
-import com.leanhduc.telegramclone.dto.conversation.UpdateConversationRequest;
+import com.leanhduc.telegramclone.dto.conversation.*;
 import com.leanhduc.telegramclone.dto.media.MediaAttachmentDto;
 import com.leanhduc.telegramclone.dto.message.ChatMessageResponse;
 import com.leanhduc.telegramclone.dto.user.UserDto;
@@ -12,8 +9,10 @@ import com.leanhduc.telegramclone.exception.ErrorCode;
 import com.leanhduc.telegramclone.mapper.ConversationMapper;
 import com.leanhduc.telegramclone.mapper.MessageMapper;
 import com.leanhduc.telegramclone.model.*;
+import com.leanhduc.telegramclone.model.enums.AdminPermission;
 import com.leanhduc.telegramclone.model.enums.ConversationRole;
 import com.leanhduc.telegramclone.model.enums.ConversationType;
+import com.leanhduc.telegramclone.model.enums.MemberPermission;
 import com.leanhduc.telegramclone.repository.*;
 import com.leanhduc.telegramclone.dto.invite.CreateInviteLinkRequest;
 import com.leanhduc.telegramclone.service.Presence.IPresenceService;
@@ -48,6 +47,7 @@ public class ConversationService implements IConversationService {
     private final IPresenceService presenceService;
     private final IConversationInviteLinkService inviteLinkService;
     private final SimpMessagingTemplate messagingTemplate;
+    private final IPermissionService permissionService;
 
     @Override
     @Transactional
@@ -112,22 +112,34 @@ public class ConversationService implements IConversationService {
 
         ConversationType type = request.getType() != null ? request.getType() : ConversationType.GROUP;
 
+        Set<MemberPermission> defaultPermissions = new HashSet<>();
+        if (type == ConversationType.GROUP) {
+            defaultPermissions.add(MemberPermission.SEND_MESSAGES);
+            defaultPermissions.add(MemberPermission.SEND_MEDIA);
+            defaultPermissions.add(MemberPermission.SEND_POLLS);
+            defaultPermissions.add(MemberPermission.EMBED_LINKS);
+            defaultPermissions.add(MemberPermission.ADD_MEMBERS);
+        }
+
         Conversation conversation = Conversation.builder()
                 .type(type)
                 .title(request.getTitle())
                 .description(request.getDescription())
                 .avatarMediaId(request.getAvatarMediaId())
                 .createdBy(creatorUserId)
+                .defaultMemberPermissions(defaultPermissions)
                 .build();
 
         conversation = conversationRepository.save(conversation);
 
-        // Add creator as OWNER
+        // Add creator as OWNER with full permissions
         ConversationMember creatorMember = ConversationMember.builder()
                 .id(new ConversationMemberId(conversation.getId(), creatorUserId))
                 .conversation(conversation)
                 .user(creator)
                 .role(ConversationRole.OWNER)
+                .memberPermissions(EnumSet.allOf(MemberPermission.class))
+                .adminPermissions(EnumSet.allOf(AdminPermission.class))
                 .build();
         memberRepository.save(creatorMember);
 
@@ -180,6 +192,8 @@ public class ConversationService implements IConversationService {
                         .orElse(activeMembers.get(0));
 
                 newOwner.setRole(ConversationRole.OWNER);
+                newOwner.setMemberPermissions(EnumSet.allOf(MemberPermission.class));
+                newOwner.setAdminPermissions(EnumSet.allOf(AdminPermission.class));
                 memberRepository.save(newOwner);
             }
         }
@@ -198,15 +212,20 @@ public class ConversationService implements IConversationService {
 
         boolean isSelfJoin = conversation.isPublic() && requesterId.equals(targetUserId);
 
-        ConversationMember requesterMember = null;
         if (!isSelfJoin) {
-            requesterMember = getActiveMemberOrThrow(conversationId, requesterId);
-        }
+            ConversationMember requesterMember = getActiveMemberOrThrow(conversationId, requesterId);
 
-        if (conversation.getType() == ConversationType.CHANNEL && !isSelfJoin &&
-                requesterMember.getRole() != ConversationRole.OWNER &&
-                requesterMember.getRole() != ConversationRole.ADMIN) {
-            throw new BusinessException(ErrorCode.NOT_IN_CONVERSATION);
+            if (conversation.getType() == ConversationType.CHANNEL) {
+                if (!permissionService.hasAdminPermission(requesterMember, AdminPermission.INVITE_USERS) &&
+                    !permissionService.hasAdminPermission(requesterMember, AdminPermission.ADD_ADMINS)) {
+                    throw new BusinessException(ErrorCode.PERMISSION_DENIED);
+                }
+            } else {
+                if (!permissionService.hasMemberPermission(requesterMember, MemberPermission.ADD_MEMBERS) &&
+                    !permissionService.hasAdminPermission(requesterMember, AdminPermission.INVITE_USERS)) {
+                    throw new BusinessException(ErrorCode.PERMISSION_DENIED);
+                }
+            }
         }
 
         User targetUser = getUserOrThrow(targetUserId);
@@ -255,9 +274,8 @@ public class ConversationService implements IConversationService {
 
         ConversationMember requesterMember = getActiveMemberOrThrow(conversationId, requesterId);
 
-        if (requesterMember.getRole() != ConversationRole.OWNER &&
-                requesterMember.getRole() != ConversationRole.ADMIN) {
-            throw new BusinessException(ErrorCode.ADMIN_REQUIRED);
+        if (!permissionService.hasAdminPermission(requesterMember, AdminPermission.CHANGE_INFO)) {
+            throw new BusinessException(ErrorCode.PERMISSION_DENIED);
         }
 
         if (request.getTitle() != null) {
@@ -332,9 +350,8 @@ public class ConversationService implements IConversationService {
 
         ConversationMember requesterMember = getActiveMemberOrThrow(conversationId, requesterId);
 
-        if (requesterMember.getRole() != ConversationRole.OWNER &&
-                requesterMember.getRole() != ConversationRole.ADMIN) {
-            throw new BusinessException(ErrorCode.NOT_IN_CONVERSATION);
+        if (!permissionService.hasAdminPermission(requesterMember, AdminPermission.BAN_USERS)) {
+            throw new BusinessException(ErrorCode.PERMISSION_DENIED);
         }
 
         ConversationMember targetMember = memberRepository.findById(new ConversationMemberId(conversationId, targetUserId))
@@ -345,11 +362,11 @@ public class ConversationService implements IConversationService {
         }
 
         if (targetMember.getRole() == ConversationRole.OWNER) {
-            throw new BusinessException(ErrorCode.UNAUTHORIZED_MESSAGE_ACTION);
+            throw new BusinessException(ErrorCode.PERMISSION_DENIED);
         }
 
         if (requesterMember.getRole() == ConversationRole.ADMIN && targetMember.getRole() == ConversationRole.ADMIN) {
-            throw new BusinessException(ErrorCode.UNAUTHORIZED_MESSAGE_ACTION);
+            throw new BusinessException(ErrorCode.PERMISSION_DENIED);
         }
 
         targetMember.setLeftAt(java.time.Instant.now());
@@ -372,8 +389,9 @@ public class ConversationService implements IConversationService {
         validateNotPrivate(conversation, ErrorCode.CANNOT_CHAT_WITH_YOURSELF);
 
         ConversationMember requesterMember = getActiveMemberOrThrow(conversationId, requesterId);
-        if (requesterMember.getRole() != ConversationRole.OWNER) {
-            throw new BusinessException(ErrorCode.NOT_IN_CONVERSATION);
+
+        if (!permissionService.hasAdminPermission(requesterMember, AdminPermission.ADD_ADMINS)) {
+            throw new BusinessException(ErrorCode.PERMISSION_DENIED);
         }
 
         ConversationMember targetMember = memberRepository.findById(new ConversationMemberId(conversationId, targetUserId))
@@ -382,15 +400,41 @@ public class ConversationService implements IConversationService {
             throw new BusinessException(ErrorCode.USER_NOT_FOUND);
         }
 
+        if (targetMember.getRole() == ConversationRole.OWNER) {
+            throw new BusinessException(ErrorCode.PERMISSION_DENIED);
+        }
+
         if (role == ConversationRole.OWNER) {
+            if (requesterMember.getRole() != ConversationRole.OWNER) {
+                throw new BusinessException(ErrorCode.PERMISSION_DENIED);
+            }
             requesterMember.setRole(ConversationRole.ADMIN);
             memberRepository.save(requesterMember);
             targetMember.setRole(ConversationRole.OWNER);
+            targetMember.setMemberPermissions(EnumSet.allOf(MemberPermission.class));
+            targetMember.setAdminPermissions(EnumSet.allOf(AdminPermission.class));
             memberRepository.save(targetMember);
         } else {
             targetMember.setRole(role);
+            if (role == ConversationRole.ADMIN) {
+                if (targetMember.getAdminPermissions() == null || targetMember.getAdminPermissions().isEmpty()) {
+                    targetMember.setAdminPermissions(new HashSet<>(List.of(
+                            AdminPermission.CHANGE_INFO,
+                            AdminPermission.DELETE_MESSAGES,
+                            AdminPermission.BAN_USERS,
+                            AdminPermission.INVITE_USERS,
+                            AdminPermission.PIN_MESSAGES
+                    )));
+                }
+            } else {
+                targetMember.getAdminPermissions().clear();
+            }
             memberRepository.save(targetMember);
         }
+
+        ConversationResponse updatedResponse = mapToConversationResponse(conversation, null);
+        WsEnvelope<ConversationResponse> envelope = WsEnvelope.of("CONVERSATION_UPDATED", updatedResponse);
+        broadcastEnvelopeToMembers(conversation, envelope, null);
     }
 
     @Override
@@ -457,6 +501,95 @@ public class ConversationService implements IConversationService {
     }
 
     // ==========================================
+    // PERMISSIONS MANAGEMENT IMPLEMENTATION
+    // ==========================================
+
+    @Override
+    @Transactional
+    public void updateDefaultPermissions(UUID requesterId, UUID conversationId, UpdateDefaultPermissionsRequest request) {
+        Conversation conversation = getConversationOrThrow(conversationId);
+        validateNotPrivate(conversation, ErrorCode.CANNOT_CHAT_WITH_YOURSELF);
+
+        ConversationMember requesterMember = getActiveMemberOrThrow(conversationId, requesterId);
+        if (!permissionService.hasAdminPermission(requesterMember, AdminPermission.CHANGE_INFO)) {
+            throw new BusinessException(ErrorCode.PERMISSION_DENIED);
+        }
+
+        Set<MemberPermission> newDefaults = request.permissions() != null ? request.permissions() : new HashSet<>();
+        conversation.setDefaultMemberPermissions(newDefaults);
+        conversationRepository.save(conversation);
+    }
+
+    @Override
+    @Transactional
+    public void updateMemberPermissions(UUID requesterId, UUID conversationId, UUID targetUserId, UpdateMemberPermissionsRequest request) {
+        Conversation conversation = getConversationOrThrow(conversationId);
+        validateNotPrivate(conversation, ErrorCode.CANNOT_CHAT_WITH_YOURSELF);
+
+        ConversationMember requesterMember = getActiveMemberOrThrow(conversationId, requesterId);
+        if (!permissionService.hasAdminPermission(requesterMember, AdminPermission.BAN_USERS)) {
+            throw new BusinessException(ErrorCode.PERMISSION_DENIED);
+        }
+
+        ConversationMember targetMember = memberRepository.findById(new ConversationMemberId(conversationId, targetUserId))
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+        if (targetMember.getLeftAt() != null) {
+            throw new BusinessException(ErrorCode.USER_NOT_FOUND);
+        }
+
+        if (targetMember.getRole() == ConversationRole.OWNER) {
+            throw new BusinessException(ErrorCode.PERMISSION_DENIED);
+        }
+
+        Set<MemberPermission> newPermissions = request.permissions() != null ? request.permissions() : new HashSet<>();
+        targetMember.setMemberPermissions(newPermissions);
+        memberRepository.save(targetMember);
+    }
+
+    @Override
+    @Transactional
+    public void updateAdminPermissions(UUID requesterId, UUID conversationId, UUID targetUserId, UpdateAdminPermissionsRequest request) {
+        Conversation conversation = getConversationOrThrow(conversationId);
+        validateNotPrivate(conversation, ErrorCode.CANNOT_CHAT_WITH_YOURSELF);
+
+        ConversationMember requesterMember = getActiveMemberOrThrow(conversationId, requesterId);
+        Set<AdminPermission> requestedAdminPermissions = request.permissions() != null ? request.permissions() : new HashSet<>();
+
+        if (!permissionService.canManageAdminPermissions(requesterMember, requestedAdminPermissions)) {
+            throw new BusinessException(ErrorCode.CANNOT_GRANT_UNPOSSESSED_PERMISSION);
+        }
+
+        ConversationMember targetMember = memberRepository.findById(new ConversationMemberId(conversationId, targetUserId))
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+        if (targetMember.getLeftAt() != null) {
+            throw new BusinessException(ErrorCode.USER_NOT_FOUND);
+        }
+
+        if (targetMember.getRole() == ConversationRole.OWNER) {
+            throw new BusinessException(ErrorCode.PERMISSION_DENIED);
+        }
+
+        if (targetMember.getRole() != ConversationRole.ADMIN) {
+            targetMember.setRole(ConversationRole.ADMIN);
+        }
+
+        targetMember.setAdminPermissions(requestedAdminPermissions);
+        memberRepository.save(targetMember);
+
+        ConversationResponse updatedResponse = mapToConversationResponse(conversation, null);
+        WsEnvelope<ConversationResponse> envelope = WsEnvelope.of("CONVERSATION_UPDATED", updatedResponse);
+        broadcastEnvelopeToMembers(conversation, envelope, null);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public UserDto getMemberPermissions(UUID requesterId, UUID conversationId, UUID targetUserId) {
+        getActiveMemberOrThrow(conversationId, requesterId);
+        ConversationMember targetMember = getActiveMemberOrThrow(conversationId, targetUserId);
+        return mapToUserDto(targetMember);
+    }
+
+    // ==========================================
     // HELPER METHODS FOR REFACTORING & DRY CODE
     // ==========================================
 
@@ -502,7 +635,9 @@ public class ConversationService implements IConversationService {
                 u.getBio(),
                 u.getAvatarMediaId(),
                 u.getRole(),
-                member.getRole() != null ? member.getRole().name() : null
+                member.getRole() != null ? member.getRole().name() : null,
+                member.getMemberPermissions(),
+                member.getAdminPermissions()
         );
         dto.setAvatarUrl(resolveMediaUrl(u.getAvatarMediaId()));
         dto.setOnline(presenceService.isUserOnline(u.getId()));
@@ -672,12 +807,12 @@ public class ConversationService implements IConversationService {
         }
 
         ConversationMember channelMember = getActiveMemberOrThrow(channelId, requesterId);
-        if (channelMember.getRole() != ConversationRole.OWNER && channelMember.getRole() != ConversationRole.ADMIN) {
+        if (!permissionService.hasAdminPermission(channelMember, AdminPermission.CHANGE_INFO)) {
             throw new BusinessException(ErrorCode.NOT_ADMIN_OF_BOTH_CONVERSATIONS);
         }
 
         ConversationMember groupMember = getActiveMemberOrThrow(groupId, requesterId);
-        if (groupMember.getRole() != ConversationRole.OWNER && groupMember.getRole() != ConversationRole.ADMIN) {
+        if (!permissionService.hasAdminPermission(groupMember, AdminPermission.CHANGE_INFO)) {
             throw new BusinessException(ErrorCode.NOT_ADMIN_OF_BOTH_CONVERSATIONS);
         }
 
@@ -714,7 +849,7 @@ public class ConversationService implements IConversationService {
         }
 
         ConversationMember channelMember = getActiveMemberOrThrow(channelId, requesterId);
-        if (channelMember.getRole() != ConversationRole.OWNER && channelMember.getRole() != ConversationRole.ADMIN) {
+        if (!permissionService.hasAdminPermission(channelMember, AdminPermission.CHANGE_INFO)) {
             throw new BusinessException(ErrorCode.ADMIN_REQUIRED);
         }
 

@@ -1,10 +1,13 @@
 package com.leanhduc.telegramclone.dto.user;
 
+import com.leanhduc.telegramclone.model.enums.AdminPermission;
+import com.leanhduc.telegramclone.model.enums.MemberPermission;
 import com.leanhduc.telegramclone.model.enums.RoleUser;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import java.util.Set;
 import java.util.UUID;
 
 @Data
@@ -23,6 +26,8 @@ public class UserDto {
     private String groupRole;
     private boolean online;
     private java.time.Instant lastSeen;
+    private Set<MemberPermission> memberPermissions;
+    private Set<AdminPermission> adminPermissions;
 
     public UserDto(UUID id, String username, String displayName, String email, String bio, UUID avatarMediaId, RoleUser role) {
         this.id = id;
@@ -35,6 +40,8 @@ public class UserDto {
         this.groupRole = null;
         this.online = false;
         this.lastSeen = null;
+        this.memberPermissions = null;
+        this.adminPermissions = null;
     }
 
     public UserDto(UUID id, String username, String displayName, String email, String bio, UUID avatarMediaId, RoleUser role, String groupRole) {
@@ -48,6 +55,22 @@ public class UserDto {
         this.groupRole = groupRole;
         this.online = false;
         this.lastSeen = null;
+        this.memberPermissions = null;
+        this.adminPermissions = null;
+    }
+
+    public UserDto(UUID id, String username, String displayName, String email, String bio, UUID avatarMediaId, RoleUser role, String groupRole, Set<MemberPermission> memberPermissions, Set<AdminPermission> adminPermissions) {
+        this.id = id;
+        this.username = username;
+        this.displayName = displayName;
+        this.email = email;
+        this.bio = bio;
+        this.avatarMediaId = avatarMediaId;
+        this.role = role;
+        this.groupRole = groupRole;
+        this.online = false;
+        this.lastSeen = null;
+        this.memberPermissions = memberPermissions;
+        this.adminPermissions = adminPermissions;
     }
 }
-

@@ -5,9 +5,12 @@ import com.leanhduc.telegramclone.dto.conversation.AddMemberRequest;
 import com.leanhduc.telegramclone.dto.conversation.DiscussionGroupInfoResponse;
 import com.leanhduc.telegramclone.dto.conversation.LinkDiscussionGroupRequest;
 import com.leanhduc.telegramclone.dto.conversation.UpdateConversationRequest;
-import jakarta.validation.Valid;
+import com.leanhduc.telegramclone.dto.conversation.UpdateDefaultPermissionsRequest;
+import com.leanhduc.telegramclone.dto.conversation.UpdateMemberPermissionsRequest;
+import com.leanhduc.telegramclone.dto.conversation.UpdateAdminPermissionsRequest;
 import com.leanhduc.telegramclone.dto.conversation.UpdateRoleRequest;
 import com.leanhduc.telegramclone.dto.conversation.ConversationResponse;
+import com.leanhduc.telegramclone.dto.user.UserDto;
 import com.leanhduc.telegramclone.service.conversation.IConversationService;
 import com.leanhduc.telegramclone.service.message.IMessageService;
 import com.leanhduc.telegramclone.dto.message.ChannelViewsRequest;
@@ -16,6 +19,7 @@ import com.leanhduc.telegramclone.dto.websocket.WsEnvelope;
 import com.leanhduc.telegramclone.dto.websocket.UnpinMessageResponse;
 import com.leanhduc.telegramclone.dto.message.PinMessageResult;
 import com.leanhduc.telegramclone.model.enums.ConversationType;
+import jakarta.validation.Valid;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -287,6 +291,54 @@ public class ConversationController {
     ) {
         UUID requesterId = UUID.fromString(principal.getName());
         DiscussionGroupInfoResponse response = conversationService.getLinkedDiscussionGroup(channelId, requesterId);
+        return ResponseEntity.ok(response);
+    }
+
+    // ================= PERMISSIONS ENDPOINTS =================
+
+    @PutMapping("/{conversationId}/default-permissions")
+    public ResponseEntity<Void> updateDefaultPermissions(
+            @PathVariable UUID conversationId,
+            @RequestBody UpdateDefaultPermissionsRequest request,
+            Principal principal
+    ) {
+        UUID requesterId = UUID.fromString(principal.getName());
+        conversationService.updateDefaultPermissions(requesterId, conversationId, request);
+        return ResponseEntity.ok().build();
+    }
+
+    @PutMapping("/{conversationId}/members/{userId}/member-permissions")
+    public ResponseEntity<Void> updateMemberPermissions(
+            @PathVariable UUID conversationId,
+            @PathVariable UUID userId,
+            @RequestBody UpdateMemberPermissionsRequest request,
+            Principal principal
+    ) {
+        UUID requesterId = UUID.fromString(principal.getName());
+        conversationService.updateMemberPermissions(requesterId, conversationId, userId, request);
+        return ResponseEntity.ok().build();
+    }
+
+    @PutMapping("/{conversationId}/members/{userId}/admin-permissions")
+    public ResponseEntity<Void> updateAdminPermissions(
+            @PathVariable UUID conversationId,
+            @PathVariable UUID userId,
+            @RequestBody UpdateAdminPermissionsRequest request,
+            Principal principal
+    ) {
+        UUID requesterId = UUID.fromString(principal.getName());
+        conversationService.updateAdminPermissions(requesterId, conversationId, userId, request);
+        return ResponseEntity.ok().build();
+    }
+
+    @GetMapping("/{conversationId}/members/{userId}/permissions")
+    public ResponseEntity<UserDto> getMemberPermissions(
+            @PathVariable UUID conversationId,
+            @PathVariable UUID userId,
+            Principal principal
+    ) {
+        UUID requesterId = UUID.fromString(principal.getName());
+        UserDto response = conversationService.getMemberPermissions(requesterId, conversationId, userId);
         return ResponseEntity.ok(response);
     }
 }

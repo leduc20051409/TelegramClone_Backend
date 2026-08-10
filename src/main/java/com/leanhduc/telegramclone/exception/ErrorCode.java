@@ -59,7 +59,11 @@ public enum ErrorCode {
     GROUP_ALREADY_LINKED("This Group is already linked to another Channel", HttpStatus.CONFLICT),
     CHANNEL_ALREADY_HAS_DISCUSSION("This Channel is already linked to a Group", HttpStatus.CONFLICT),
     NOT_ADMIN_OF_BOTH_CONVERSATIONS("You must be an owner or admin of both the Channel and the Group", HttpStatus.FORBIDDEN),
-    DISCUSSION_NOT_LINKED("Channel does not have a linked discussion group", HttpStatus.NOT_FOUND);
+    DISCUSSION_NOT_LINKED("Channel does not have a linked discussion group", HttpStatus.NOT_FOUND),
+
+    // ================= PERMISSIONS =================
+    PERMISSION_DENIED("Permission denied: you do not have permission to perform this action", HttpStatus.FORBIDDEN),
+    CANNOT_GRANT_UNPOSSESSED_PERMISSION("Admin cannot grant permissions they do not possess", HttpStatus.FORBIDDEN);
 
     private final String message;
     private final HttpStatus status;

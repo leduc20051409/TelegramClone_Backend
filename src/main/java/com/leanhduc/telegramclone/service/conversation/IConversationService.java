@@ -1,9 +1,7 @@
 package com.leanhduc.telegramclone.service.conversation;
 
-import com.leanhduc.telegramclone.dto.conversation.ConversationResponse;
-import com.leanhduc.telegramclone.dto.conversation.CreateGroupRequest;
-import com.leanhduc.telegramclone.dto.conversation.DiscussionGroupInfoResponse;
-import com.leanhduc.telegramclone.dto.conversation.UpdateConversationRequest;
+import com.leanhduc.telegramclone.dto.conversation.*;
+import com.leanhduc.telegramclone.dto.user.UserDto;
 import com.leanhduc.telegramclone.model.enums.ConversationRole;
 import com.leanhduc.telegramclone.model.enums.ConversationType;
 import java.util.List;
@@ -27,4 +25,10 @@ public interface IConversationService {
     DiscussionGroupInfoResponse linkDiscussionGroup(UUID channelId, UUID groupId, UUID requesterId);
     void unlinkDiscussionGroup(UUID channelId, UUID requesterId);
     DiscussionGroupInfoResponse getLinkedDiscussionGroup(UUID channelId, UUID requesterId);
+
+    // Permissions management
+    void updateDefaultPermissions(UUID requesterId, UUID conversationId, UpdateDefaultPermissionsRequest request);
+    void updateMemberPermissions(UUID requesterId, UUID conversationId, UUID targetUserId, UpdateMemberPermissionsRequest request);
+    void updateAdminPermissions(UUID requesterId, UUID conversationId, UUID targetUserId, UpdateAdminPermissionsRequest request);
+    UserDto getMemberPermissions(UUID requesterId, UUID conversationId, UUID targetUserId);
 }

@@ -1,10 +1,14 @@
 package com.leanhduc.telegramclone.model;
 
+import com.leanhduc.telegramclone.model.enums.AdminPermission;
 import com.leanhduc.telegramclone.model.enums.ConversationRole;
+import com.leanhduc.telegramclone.model.enums.MemberPermission;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
 import java.time.Instant;
+import java.util.HashSet;
+import java.util.Set;
 
 @Entity
 @Table(name = "conversation_members")
@@ -22,7 +26,6 @@ public class ConversationMember {
     @MapsId("conversationId")
     @JoinColumn(name = "conversation_id")
     private Conversation conversation;
-
 
     @ManyToOne(fetch = FetchType.LAZY)
     @MapsId("userId")
@@ -44,4 +47,30 @@ public class ConversationMember {
     @Column(name = "is_muted", nullable = false)
     @Builder.Default
     private boolean isMuted = false;
+
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(
+        name = "conversation_member_permissions",
+        joinColumns = {
+            @JoinColumn(name = "conversation_id", referencedColumnName = "conversation_id"),
+            @JoinColumn(name = "user_id", referencedColumnName = "user_id")
+        }
+    )
+    @Column(name = "permission")
+    @Enumerated(EnumType.STRING)
+    @Builder.Default
+    private Set<MemberPermission> memberPermissions = new HashSet<>();
+
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(
+        name = "conversation_admin_permissions",
+        joinColumns = {
+            @JoinColumn(name = "conversation_id", referencedColumnName = "conversation_id"),
+            @JoinColumn(name = "user_id", referencedColumnName = "user_id")
+        }
+    )
+    @Column(name = "permission")
+    @Enumerated(EnumType.STRING)
+    @Builder.Default
+    private Set<AdminPermission> adminPermissions = new HashSet<>();
 }

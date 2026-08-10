@@ -1,12 +1,15 @@
 package com.leanhduc.telegramclone.model;
 
 import com.leanhduc.telegramclone.model.enums.ConversationType;
+import com.leanhduc.telegramclone.model.enums.MemberPermission;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
 import java.time.Instant;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.UUID;
 
 @Entity
@@ -53,4 +56,14 @@ public class Conversation {
     @UpdateTimestamp
     @Column(name = "updated_at")
     private Instant updatedAt;
+
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(
+        name = "conversation_default_permissions",
+        joinColumns = @JoinColumn(name = "conversation_id")
+    )
+    @Column(name = "permission")
+    @Enumerated(EnumType.STRING)
+    @Builder.Default
+    private Set<MemberPermission> defaultMemberPermissions = new HashSet<>();
 }
