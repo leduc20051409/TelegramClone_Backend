@@ -14,54 +14,67 @@ import java.util.UUID;
 @Repository
 public interface MessageRepository extends JpaRepository<Message, Long> {
 
-    List<Message> findByConversationIdAndDeletedFalseOrderByIdDesc(UUID conversationId, Pageable pageable);
+        List<Message> findByConversationIdAndDeletedFalseOrderByIdDesc(UUID conversationId, Pageable pageable);
 
-    /**
-     * Keyset Pagination: Lấy các tin nhắn CŨ HƠN một tin nhắn cụ thể (dùng khi cuộn lên xem lịch sử).
-     * Truy vấn này dùng index idx_messages_conv_not_deleted sẽ chạy siêu nhanh.
-     */
-    @Query("SELECT m FROM Message m WHERE m.conversation.id = :conversationId " +
-            "AND m.deleted = false AND m.id < :lastMessageId " +
-            "ORDER BY m.id DESC")
-    List<Message> findMessagesBeforeId(
-            @Param("conversationId") UUID conversationId,
-            @Param("lastMessageId") Long lastMessageId,
-            Pageable pageable
-    );
 
-    @Query("SELECT COUNT(m) FROM Message m WHERE m.conversation.id = :conversationId " +
-            "AND m.deleted = false AND m.sender.id <> :userId " +
-            "AND (:lastReadMessageId IS NULL OR m.id > :lastReadMessageId)")
-    long countUnreadMessages(
-            @Param("conversationId") UUID conversationId,
-            @Param("userId") UUID userId,
-            @Param("lastReadMessageId") Long lastReadMessageId
-    );
+        @Query("SELECT m FROM Message m WHERE m.conversation.id = :conversationId " +
+                        "AND m.deleted = false AND m.id < :lastMessageId " +
+                        "ORDER BY m.id DESC")
+        List<Message> findMessagesBeforeId(
+                        @Param("conversationId") UUID conversationId,
+                        @Param("lastMessageId") Long lastMessageId,
+                        Pageable pageable);
 
-    List<Message> findByConversationIdAndDeletedFalseAndBodyContainingIgnoreCaseAndCreatedAtBetweenOrderByIdDesc(
-            UUID conversationId,
-            String query,
-            Instant startDate,
-            Instant endDate,
-            Pageable pageable
-    );
+        @Query("SELECT COUNT(m) FROM Message m WHERE m.conversation.id = :conversationId " +
+                        "AND m.deleted = false AND m.sender.id <> :userId " +
+                        "AND (:lastReadMessageId IS NULL OR m.id > :lastReadMessageId)")
+        long countUnreadMessages(
+                        @Param("conversationId") UUID conversationId,
+                        @Param("userId") UUID userId,
+                        @Param("lastReadMessageId") Long lastReadMessageId);
 
-    List<Message> findByConversationIdAndDeletedFalseAndBodyContainingIgnoreCaseOrderByIdDesc(
-            UUID conversationId,
-            String query,
-            Pageable pageable
-    );
+        List<Message> findByConversationIdAndDeletedFalseAndBodyContainingIgnoreCaseAndCreatedAtBetweenOrderByIdDesc(
+                        UUID conversationId,
+                        String query,
+                        Instant startDate,
+                        Instant endDate,
+                        Pageable pageable);
 
-    List<Message> findByConversationIdAndDeletedFalseAndCreatedAtBetweenOrderByIdDesc(
-            UUID conversationId,
-            Instant startDate,
-            Instant endDate,
-            Pageable pageable
-    );
+        List<Message> findByConversationIdAndDeletedFalseAndBodyContainingIgnoreCaseOrderByIdDesc(
+                        UUID conversationId,
+                        String query,
+                        Pageable pageable);
 
-    @Query("SELECT m FROM Message m WHERE m.replyTo.id = :groupRootMessageId AND m.deleted = false ORDER BY m.id ASC")
-    List<Message> findThreadComments(@Param("groupRootMessageId") Long groupRootMessageId, Pageable pageable);
+        List<Message> findByConversationIdAndDeletedFalseAndCreatedAtBetweenOrderByIdDesc(
+                        UUID conversationId,
+                        Instant startDate,
+                        Instant endDate,
+                        Pageable pageable);
 
-    @Query("SELECT m FROM Message m WHERE m.replyTo.id = :groupRootMessageId AND m.deleted = false AND m.id > :lastCommentId ORDER BY m.id ASC")
-    List<Message> findThreadCommentsAfterId(@Param("groupRootMessageId") Long groupRootMessageId, @Param("lastCommentId") Long lastCommentId, Pageable pageable);
+        @Query(value = "WITH RECURSIVE thread_tree AS (" +
+                       "  SELECT id FROM messages WHERE id = :groupRootMessageId " +
+                       "  UNION ALL " +
+                       "  SELECT m.id FROM messages m " +
+                       "  INNER JOIN thread_tree tt ON m.reply_to_message_id = tt.id " +
+                       ") " +
+                       "SELECT m.* FROM messages m " +
+                       "INNER JOIN thread_tree tt ON m.id = tt.id " +
+                       "WHERE tt.id <> :groupRootMessageId AND m.deleted = false " +
+                       "ORDER BY m.id ASC",
+                       nativeQuery = true)
+        List<Message> findThreadComments(@Param("groupRootMessageId") Long groupRootMessageId, Pageable pageable);
+
+        @Query(value = "WITH RECURSIVE thread_tree AS (" +
+                       "  SELECT id FROM messages WHERE id = :groupRootMessageId " +
+                       "  UNION ALL " +
+                       "  SELECT m.id FROM messages m " +
+                       "  INNER JOIN thread_tree tt ON m.reply_to_message_id = tt.id " +
+                       ") " +
+                       "SELECT m.* FROM messages m " +
+                       "INNER JOIN thread_tree tt ON m.id = tt.id " +
+                       "WHERE tt.id <> :groupRootMessageId AND m.id > :lastCommentId AND m.deleted = false " +
+                       "ORDER BY m.id ASC",
+                       nativeQuery = true)
+        List<Message> findThreadCommentsAfterId(@Param("groupRootMessageId") Long groupRootMessageId,
+                        @Param("lastCommentId") Long lastCommentId, Pageable pageable);
 }
