@@ -13,6 +13,8 @@ public interface IContactService {
 
     Page<ContactResponse> getContacts(UUID ownerId, Pageable pageable);
 
+    Page<ContactResponse> getBlockedContacts(UUID ownerId, Pageable pageable);
+
     ContactResponse getContact(UUID ownerId, UUID contactId);
 
     void updateContactStatus(UUID ownerId, UUID contactId, UpdateContactRequest request);

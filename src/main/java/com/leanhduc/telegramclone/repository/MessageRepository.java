@@ -9,6 +9,7 @@ import org.springframework.stereotype.Repository;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Repository
@@ -16,6 +17,7 @@ public interface MessageRepository extends JpaRepository<Message, Long> {
 
         List<Message> findByConversationIdAndDeletedFalseOrderByIdDesc(UUID conversationId, Pageable pageable);
 
+        Optional<Message> findByIdAndConversationId(Long id, UUID conversationId);
 
         @Query("SELECT m FROM Message m WHERE m.conversation.id = :conversationId " +
                         "AND m.deleted = false AND m.id < :lastMessageId " +

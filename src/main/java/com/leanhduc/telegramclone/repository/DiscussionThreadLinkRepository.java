@@ -24,4 +24,7 @@ public interface DiscussionThreadLinkRepository extends JpaRepository<Discussion
     @Modifying
     @Query("UPDATE DiscussionThreadLink d SET d.commentCount = d.commentCount + 1 WHERE d.id = :id")
     void incrementCommentCount(@Param("id") UUID id);
+
+    @Query("SELECT d.commentCount FROM DiscussionThreadLink d WHERE d.id = :id")
+    int getCommentCount(@Param("id") UUID id);
 }

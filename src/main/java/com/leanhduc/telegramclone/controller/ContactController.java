@@ -38,6 +38,14 @@ public class ContactController {
         return ResponseEntity.ok(contactService.getContacts(ownerId, pageable));
     }
 
+    @GetMapping("/blocked")
+    public ResponseEntity<Page<ContactResponse>> getBlockedContacts(
+            Principal principal,
+            Pageable pageable) {
+        UUID ownerId = UUID.fromString(principal.getName());
+        return ResponseEntity.ok(contactService.getBlockedContacts(ownerId, pageable));
+    }
+
     @GetMapping("/{contactId}")
     public ResponseEntity<ContactResponse> getContact(
             Principal principal,

@@ -4,28 +4,26 @@ import com.leanhduc.telegramclone.dto.media.MediaAttachmentDto;
 import com.leanhduc.telegramclone.dto.message.ChatMessageRequest;
 import com.leanhduc.telegramclone.dto.message.ChatMessageResponse;
 import com.leanhduc.telegramclone.dto.message.ChatReadRequest;
-import com.leanhduc.telegramclone.dto.message.CommentCountUpdateDto;
+import com.leanhduc.telegramclone.dto.message.DiscussionMediaContext;
 import com.leanhduc.telegramclone.dto.message.DiscussionThreadResponse;
 import com.leanhduc.telegramclone.dto.message.EditMessageRequest;
 import com.leanhduc.telegramclone.dto.message.PinMessageResult;
-import com.leanhduc.telegramclone.dto.websocket.WsEnvelope;
 import com.leanhduc.telegramclone.exception.BusinessException;
 import com.leanhduc.telegramclone.exception.ErrorCode;
 import com.leanhduc.telegramclone.mapper.MessageMapper;
 import com.leanhduc.telegramclone.model.*;
 import com.leanhduc.telegramclone.model.enums.AdminPermission;
-import com.leanhduc.telegramclone.model.enums.ConversationRole;
 import com.leanhduc.telegramclone.model.enums.ConversationType;
 import com.leanhduc.telegramclone.model.enums.MediaStatus;
 import com.leanhduc.telegramclone.model.enums.MemberPermission;
 import com.leanhduc.telegramclone.model.enums.MessageType;
 import com.leanhduc.telegramclone.repository.*;
 import com.leanhduc.telegramclone.service.conversation.IPermissionService;
+import com.leanhduc.telegramclone.service.message.discussion.IDiscussionService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.redis.core.RedisTemplate;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -49,8 +47,9 @@ public class MessageService implements IMessageService {
     private final RedisTemplate<String, String> redisTemplate;
     private final PinnedMessageRepository pinnedMessageRepository;
     private final DiscussionThreadLinkRepository discussionThreadLinkRepository;
-    private final SimpMessagingTemplate messagingTemplate;
+    private final IDiscussionService discussionService;
     private final IPermissionService permissionService;
+    private final ContactRepository contactRepository;
 
     @Override
     @Transactional
@@ -71,6 +70,22 @@ public class MessageService implements IMessageService {
         } else if (conversation.getType() == ConversationType.GROUP) {
             if (!permissionService.hasMemberPermission(member, MemberPermission.SEND_MESSAGES)) {
                 throw new BusinessException(ErrorCode.PERMISSION_DENIED);
+            }
+        } else if (conversation.getType() == ConversationType.PRIVATE) {
+            List<ConversationMember> members = memberRepository.findByConversationIdAndLeftAtIsNull(conversation.getId());
+            UUID partnerId = members.stream()
+                    .map(m -> m.getUser().getId())
+                    .filter(id -> !id.equals(senderId))
+                    .findFirst()
+                    .orElse(null);
+
+            if (partnerId != null) {
+                if (contactRepository.existsByOwnerIdAndContactIdAndIsBlockedTrue(partnerId, senderId)) {
+                    throw new BusinessException(ErrorCode.USER_BLOCKED);
+                }
+                if (contactRepository.existsByOwnerIdAndContactIdAndIsBlockedTrue(senderId, partnerId)) {
+                    throw new BusinessException(ErrorCode.CANNOT_MESSAGE_BLOCKED_USER);
+                }
             }
         }
 
@@ -97,7 +112,9 @@ public class MessageService implements IMessageService {
 
         Message replyTo = null;
         if (request.replyToMessageId() != null) {
-            replyTo = messageRepository.findById(request.replyToMessageId()).orElse(null);
+            replyTo = messageRepository
+                    .findByIdAndConversationId(request.replyToMessageId(), request.conversationId())
+                    .orElseThrow(() -> new BusinessException(ErrorCode.MESSAGE_NOT_FOUND));
         }
 
         Message message = Message.builder()
@@ -137,103 +154,20 @@ public class MessageService implements IMessageService {
         Long viewCount = conversation.getType() == ConversationType.CHANNEL ? 0L : null;
         Integer initialCommentCount = null;
 
-        // Discussion group auto-forward logic for Channel post
-        if (conversation.getType() == ConversationType.CHANNEL && conversation.getLinkedDiscussionGroupId() != null) {
-            Conversation linkedGroup = conversationRepository.findById(conversation.getLinkedDiscussionGroupId()).orElse(null);
-            if (linkedGroup != null) {
-                Message groupRootMessage = Message.builder()
-                        .conversation(linkedGroup)
-                        .sender(sender)
-                        .body(request.message())
-                        .messageType(messageType)
-                        .deleted(false)
-                        .forwardedFromConversation(conversation)
-                        .forwardedFromUser(sender)
-                        .forwardedAt(java.time.Instant.now())
-                        .build();
-                groupRootMessage = messageRepository.save(groupRootMessage);
-
-                if (!mediaIds.isEmpty()) {
-                    List<MessageMedia> groupMediaList = new ArrayList<>();
-                    for (int i = 0; i < mediaIds.size(); i++) {
-                        UUID mediaId = mediaIds.get(i);
-                        Media media = mediaById.get(mediaId);
-                        MessageMediaId mmId = new MessageMediaId(groupRootMessage.getId(), mediaId);
-                        MessageMedia groupMedia = MessageMedia.builder()
-                                .id(mmId)
-                                .message(groupRootMessage)
-                                .media(media)
-                                .ordinal(i)
-                                .build();
-                        groupMediaList.add(groupMedia);
-                    }
-                    messageMediaRepository.saveAll(groupMediaList);
-                }
-
-                DiscussionThreadLink threadLink = DiscussionThreadLink.builder()
-                        .channelPostMessage(message)
-                        .groupRootMessage(groupRootMessage)
-                        .commentCount(0)
-                        .build();
-                discussionThreadLinkRepository.save(threadLink);
-                initialCommentCount = 0;
-
-                // Broadcast NEW_MESSAGE to group members
-                ChatMessageResponse groupRootResponse = messageMapper.toResponse(groupRootMessage, mediaDtos, null, null);
-                WsEnvelope<ChatMessageResponse> groupEnvelope = WsEnvelope.of("NEW_MESSAGE", groupRootResponse);
-                List<ConversationMember> groupMembers = memberRepository.findByConversationIdAndLeftAtIsNull(linkedGroup.getId());
-                for (ConversationMember gm : groupMembers) {
-                    messagingTemplate.convertAndSendToUser(gm.getUser().getId().toString(), "/queue/chat", groupEnvelope);
-                }
-            }
+        if (conversation.getType() == ConversationType.CHANNEL
+                && conversation.getLinkedDiscussionGroupId() != null) {
+            DiscussionMediaContext mediaContext =
+                    new DiscussionMediaContext(mediaIds, mediaById, mediaDtos);
+            initialCommentCount = discussionService.handleChannelPost(message, mediaContext);
         }
 
-        // Discussion group comment count update logic for Group reply
         if (conversation.getType() == ConversationType.GROUP && replyTo != null) {
-            DiscussionThreadLink threadLink = findThreadLinkByMessage(replyTo);
-            if (threadLink != null) {
-                Long channelPostId = threadLink.getChannelPostMessage() != null ? threadLink.getChannelPostMessage().getId() : null;
-                UUID channelConvId = (threadLink.getChannelPostMessage() != null && threadLink.getChannelPostMessage().getConversation() != null)
-                        ? threadLink.getChannelPostMessage().getConversation().getId() : null;
-                Long groupRootId = threadLink.getGroupRootMessage() != null ? threadLink.getGroupRootMessage().getId() : null;
-
-                discussionThreadLinkRepository.incrementCommentCount(threadLink.getId());
-                int updatedCount = threadLink.getCommentCount() + 1;
-
-                CommentCountUpdateDto updateDto = new CommentCountUpdateDto(
-                        channelPostId,
-                        channelConvId,
-                        groupRootId,
-                        conversation.getId(),
-                        updatedCount
-                );
-                WsEnvelope<CommentCountUpdateDto> countEnvelope = WsEnvelope.of("COMMENT_COUNT_UPDATED", updateDto);
-
-                // Broadcast to channel topic and group members
-                if (channelConvId != null) {
-                    messagingTemplate.convertAndSend("/topic/channels/" + channelConvId, countEnvelope);
-                }
-                List<ConversationMember> groupMembers = memberRepository.findByConversationIdAndLeftAtIsNull(conversation.getId());
-                for (ConversationMember gm : groupMembers) {
-                    messagingTemplate.convertAndSendToUser(gm.getUser().getId().toString(), "/queue/chat", countEnvelope);
-                }
-            }
+            discussionService.handleCommentCreated(message);
         }
 
         return messageMapper.toResponse(message, mediaDtos, viewCount, initialCommentCount);
     }
 
-    private DiscussionThreadLink findThreadLinkByMessage(Message msg) {
-        Message current = msg;
-        while (current != null) {
-            Optional<DiscussionThreadLink> linkOpt = discussionThreadLinkRepository.findByGroupRootMessageId(current.getId());
-            if (linkOpt.isPresent()) {
-                return linkOpt.get();
-            }
-            current = current.getReplyTo();
-        }
-        return null;
-    }
 
     @Override
     @Transactional(readOnly = true)

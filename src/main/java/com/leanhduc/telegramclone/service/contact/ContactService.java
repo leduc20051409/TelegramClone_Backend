@@ -65,6 +65,16 @@ public class ContactService implements IContactService {
     @Override
     public Page<ContactResponse> getContacts(UUID ownerId, Pageable pageable) {
         Page<Contact> contactPage = contactRepository.findByIdOwnerIdAndBlockedFalse(ownerId, pageable);
+        return mapToContactResponsePage(contactPage);
+    }
+
+    @Override
+    public Page<ContactResponse> getBlockedContacts(UUID ownerId, Pageable pageable) {
+        Page<Contact> contactPage = contactRepository.findByIdOwnerIdAndBlockedTrue(ownerId, pageable);
+        return mapToContactResponsePage(contactPage);
+    }
+
+    private Page<ContactResponse> mapToContactResponsePage(Page<Contact> contactPage) {
         return contactPage.map(contact -> {
             ContactResponse response = contactMapper.toResponse(contact);
             boolean online = presenceService.isUserOnline(contact.getContact().getId());

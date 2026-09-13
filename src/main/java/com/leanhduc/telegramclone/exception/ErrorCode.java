@@ -20,6 +20,8 @@ public enum ErrorCode {
     // ================= CONTACT =================
     CONTACT_ALREADY_EXISTS("Contact already exists", HttpStatus.CONFLICT),
     CANNOT_ADD_SELF("Cannot add yourself as a contact", HttpStatus.BAD_REQUEST),
+    USER_BLOCKED("You have been blocked by this user", HttpStatus.FORBIDDEN),
+    CANNOT_MESSAGE_BLOCKED_USER("You have blocked this contact. Unblock to send messages", HttpStatus.BAD_REQUEST),
 
     // ================= CONVERSATION =================
     CANNOT_CHAT_WITH_YOURSELF("Cannot create a conversation with yourself", HttpStatus.BAD_REQUEST),
