@@ -1,5 +1,6 @@
 package com.leanhduc.telegramclone.service.Presence;
 
+import com.leanhduc.telegramclone.event.UserPresenceChangedEvent;
 import com.leanhduc.telegramclone.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;

@@ -3,7 +3,7 @@ package com.leanhduc.telegramclone.listener;
 import com.leanhduc.telegramclone.dto.websocket.WsEnvelope;
 import com.leanhduc.telegramclone.repository.ContactRepository;
 import com.leanhduc.telegramclone.repository.ConversationMemberRepository;
-import com.leanhduc.telegramclone.service.Presence.UserPresenceChangedEvent;
+import com.leanhduc.telegramclone.event.UserPresenceChangedEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;

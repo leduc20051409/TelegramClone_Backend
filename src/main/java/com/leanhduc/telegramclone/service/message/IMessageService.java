@@ -32,4 +32,6 @@ public interface IMessageService {
     List<ChatMessageResponse> searchMessages(UUID conversationId, UUID currentUserId, String query, String dateStr);
 
     DiscussionThreadResponse getDiscussionThread(UUID currentUserId, Long channelPostId, Long cursor, int size);
+
+    List<ChatMessageResponse> forwardMessage(UUID currentUserId, Long messageId, com.leanhduc.telegramclone.dto.message.ForwardMessageRequest request);
 }

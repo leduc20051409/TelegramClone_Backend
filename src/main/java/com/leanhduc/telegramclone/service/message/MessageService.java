@@ -7,6 +7,10 @@ import com.leanhduc.telegramclone.dto.message.ChatReadRequest;
 import com.leanhduc.telegramclone.dto.message.DiscussionMediaContext;
 import com.leanhduc.telegramclone.dto.message.DiscussionThreadResponse;
 import com.leanhduc.telegramclone.dto.message.EditMessageRequest;
+import com.leanhduc.telegramclone.dto.message.ForwardMessageRequest;
+import com.leanhduc.telegramclone.event.MessageDeletedEvent;
+import com.leanhduc.telegramclone.event.MessageEditedEvent;
+import com.leanhduc.telegramclone.event.MessagesForwardedEvent;
 import com.leanhduc.telegramclone.dto.message.PinMessageResult;
 import com.leanhduc.telegramclone.exception.BusinessException;
 import com.leanhduc.telegramclone.exception.ErrorCode;
@@ -21,12 +25,14 @@ import com.leanhduc.telegramclone.repository.*;
 import com.leanhduc.telegramclone.service.conversation.IPermissionService;
 import com.leanhduc.telegramclone.service.message.discussion.IDiscussionService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
@@ -34,6 +40,13 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class MessageService implements IMessageService {
+
+    private static final Set<MessageType> FORWARDABLE_MESSAGE_TYPES = Set.of(
+            MessageType.TEXT,
+            MessageType.IMAGE,
+            MessageType.VIDEO,
+            MessageType.FILE
+    );
 
     private final MessageRepository messageRepository;
     private final ConversationRepository conversationRepository;
@@ -50,6 +63,7 @@ public class MessageService implements IMessageService {
     private final IDiscussionService discussionService;
     private final IPermissionService permissionService;
     private final ContactRepository contactRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Override
     @Transactional
@@ -350,7 +364,20 @@ public class MessageService implements IMessageService {
                     .orElse(0L);
         }
 
-        return messageMapper.toResponse(message, mediaDtos, viewCount);
+        ChatMessageResponse response = messageMapper.toResponse(message, mediaDtos, viewCount);
+
+        List<UUID> memberIds = memberRepository.findByConversationIdAndLeftAtIsNull(message.getConversation().getId())
+                .stream()
+                .map(member -> member.getUser().getId())
+                .toList();
+
+        eventPublisher.publishEvent(new MessageEditedEvent(
+                response,
+                message.getConversation().getType(),
+                memberIds
+        ));
+
+        return response;
     }
 
     @Override
@@ -374,7 +401,21 @@ public class MessageService implements IMessageService {
         message.setDeleted(true);
         messageRepository.save(message);
 
-        return message.getConversation().getId();
+        UUID conversationId = message.getConversation().getId();
+        ConversationType conversationType = message.getConversation().getType();
+        List<UUID> memberIds = memberRepository.findByConversationIdAndLeftAtIsNull(conversationId)
+                .stream()
+                .map(member -> member.getUser().getId())
+                .toList();
+
+        eventPublisher.publishEvent(new MessageDeletedEvent(
+                messageId,
+                conversationId,
+                conversationType,
+                memberIds
+        ));
+
+        return conversationId;
     }
 
     @Override
@@ -625,4 +666,168 @@ public class MessageService implements IMessageService {
                 commentResponses
         );
     }
+
+    @Override
+    @Transactional
+    public List<ChatMessageResponse> forwardMessage(UUID currentUserId, Long messageId, ForwardMessageRequest request) {
+        if (request.targetConversationIds() == null || request.targetConversationIds().isEmpty()) {
+            throw new BusinessException(ErrorCode.NO_TARGET_CONVERSATION);
+        }
+
+        Set<UUID> uniqueTargetIds = new HashSet<>(request.targetConversationIds());
+        if (uniqueTargetIds.size() != request.targetConversationIds().size()) {
+            throw new BusinessException(ErrorCode.DUPLICATE_TARGET_CONVERSATION);
+        }
+
+        // 1. Validate Source Message
+        Message sourceMessage = messageRepository.findById(messageId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.MESSAGE_NOT_FOUND));
+
+        if (sourceMessage.isDeleted()) {
+            throw new BusinessException(ErrorCode.MESSAGE_NOT_FOUND);
+        }
+
+        if (!FORWARDABLE_MESSAGE_TYPES.contains(sourceMessage.getMessageType())) {
+            throw new BusinessException(ErrorCode.CANNOT_FORWARD_MESSAGE_TYPE);
+        }
+
+        User currentUser = userRepository.findById(currentUserId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+
+        validateSourceAccess(currentUser, sourceMessage.getConversation());
+
+        // 2. Determine Original Attribution
+        User originalSender = sourceMessage.getForwardedFromUser() != null
+                ? sourceMessage.getForwardedFromUser()
+                : sourceMessage.getSender();
+
+        Conversation originalConversation = sourceMessage.getForwardedFromConversation() != null
+                ? sourceMessage.getForwardedFromConversation()
+                : sourceMessage.getConversation();
+
+        Instant forwardedAt = Instant.now();
+
+        // 3. Pre-validate ALL target conversations (All-or-Nothing policy)
+        Map<UUID, TargetValidationContext> targetContexts = new LinkedHashMap<>();
+
+        for (UUID targetConvId : request.targetConversationIds()) {
+            Conversation targetConv = conversationRepository.findById(targetConvId)
+                    .orElseThrow(() -> new BusinessException(ErrorCode.CONVERSATION_NOT_FOUND));
+
+            ConversationMember member = memberRepository.findById(new ConversationMemberId(targetConvId, currentUserId))
+                    .orElseThrow(() -> new BusinessException(ErrorCode.NOT_IN_CONVERSATION));
+
+            if (member.getLeftAt() != null) {
+                throw new BusinessException(ErrorCode.NOT_IN_CONVERSATION);
+            }
+
+            if (targetConv.getType() == ConversationType.CHANNEL) {
+                if (!permissionService.hasAdminPermission(member, AdminPermission.POST_MESSAGES)) {
+                    throw new BusinessException(ErrorCode.SUBSCRIBERS_CANNOT_POST);
+                }
+            } else if (targetConv.getType() == ConversationType.GROUP) {
+                if (!permissionService.hasMemberPermission(member, MemberPermission.SEND_MESSAGES)) {
+                    throw new BusinessException(ErrorCode.PERMISSION_DENIED);
+                }
+            } else if (targetConv.getType() == ConversationType.PRIVATE) {
+                List<ConversationMember> convMembers = memberRepository.findByConversationIdAndLeftAtIsNull(targetConvId);
+                UUID partnerId = convMembers.stream()
+                        .map(m -> m.getUser().getId())
+                        .filter(id -> !id.equals(currentUserId))
+                        .findFirst()
+                        .orElse(null);
+
+                if (partnerId != null) {
+                    if (contactRepository.existsByOwnerIdAndContactIdAndIsBlockedTrue(partnerId, currentUserId)) {
+                        throw new BusinessException(ErrorCode.USER_BLOCKED);
+                    }
+                    if (contactRepository.existsByOwnerIdAndContactIdAndIsBlockedTrue(currentUserId, partnerId)) {
+                        throw new BusinessException(ErrorCode.CANNOT_MESSAGE_BLOCKED_USER);
+                    }
+                }
+            }
+
+            List<UUID> memberIds = memberRepository.findByConversationIdAndLeftAtIsNull(targetConvId).stream()
+                    .map(m -> m.getUser().getId())
+                    .toList();
+
+            targetContexts.put(targetConvId, new TargetValidationContext(targetConv, member, memberIds));
+        }
+
+        // 4. Retrieve source media attachments if any
+        List<MessageMedia> sourceMediaList = messageMediaRepository.findByMessageIdInWithMedia(List.of(messageId));
+
+        // 5. Create new forwarded messages across all targets
+        List<ChatMessageResponse> responses = new ArrayList<>();
+        List<MessagesForwardedEvent.TargetBroadcastDto> broadcasts = new ArrayList<>();
+
+        for (UUID targetConvId : request.targetConversationIds()) {
+            TargetValidationContext context = targetContexts.get(targetConvId);
+            Conversation targetConv = context.conversation();
+
+            Message forwardedMessage = Message.builder()
+                    .conversation(targetConv)
+                    .sender(currentUser)
+                    .body(sourceMessage.getBody())
+                    .messageType(sourceMessage.getMessageType())
+                    .deleted(false)
+                    .forwardedFromUser(originalSender)
+                    .forwardedFromConversation(originalConversation)
+                    .forwardedAt(forwardedAt)
+                    .build();
+
+            forwardedMessage = messageRepository.save(forwardedMessage);
+
+            // Associate existing media to the new message
+            List<MediaAttachmentDto> mediaDtos = new ArrayList<>();
+            if (!sourceMediaList.isEmpty()) {
+                List<MessageMedia> newMediaList = new ArrayList<>();
+                for (MessageMedia sm : sourceMediaList) {
+                    MessageMedia mm = MessageMedia.builder()
+                            .id(new MessageMediaId(forwardedMessage.getId(), sm.getMedia().getId()))
+                            .message(forwardedMessage)
+                            .media(sm.getMedia())
+                            .ordinal(sm.getOrdinal())
+                            .build();
+                    newMediaList.add(mm);
+                    mediaDtos.add(toMediaDto(sm.getMedia()));
+                }
+                messageMediaRepository.saveAll(newMediaList);
+            }
+
+            Long viewCount = targetConv.getType() == ConversationType.CHANNEL ? 0L : null;
+            ChatMessageResponse response = messageMapper.toResponse(forwardedMessage, mediaDtos, viewCount, null);
+            responses.add(response);
+
+            broadcasts.add(new MessagesForwardedEvent.TargetBroadcastDto(
+                    targetConvId,
+                    targetConv.getType(),
+                    context.memberIds(),
+                    response
+            ));
+        }
+
+        // 6. Publish Event for AFTER_COMMIT WebSocket broadcast
+        eventPublisher.publishEvent(new MessagesForwardedEvent(broadcasts));
+
+        return responses;
+    }
+
+    private void validateSourceAccess(User currentUser, Conversation sourceConv) {
+        if (sourceConv.getType() == ConversationType.CHANNEL && sourceConv.isPublic()) {
+            return;
+        }
+        boolean isMember = memberRepository.existsByConversationIdAndUserIdAndLeftAtIsNull(
+                sourceConv.getId(), currentUser.getId()
+        );
+        if (!isMember) {
+            throw new BusinessException(ErrorCode.NOT_IN_CONVERSATION);
+        }
+    }
+
+    private record TargetValidationContext(
+            Conversation conversation,
+            ConversationMember member,
+            List<UUID> memberIds
+    ) {}
 }

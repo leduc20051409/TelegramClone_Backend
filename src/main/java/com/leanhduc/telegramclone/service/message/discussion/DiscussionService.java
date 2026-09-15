@@ -2,7 +2,7 @@ package com.leanhduc.telegramclone.service.message.discussion;
 
 import com.leanhduc.telegramclone.dto.message.ChatMessageResponse;
 import com.leanhduc.telegramclone.dto.message.CommentCountUpdateDto;
-import com.leanhduc.telegramclone.dto.message.DiscussionBroadcastEvent;
+import com.leanhduc.telegramclone.event.DiscussionBroadcastEvent;
 import com.leanhduc.telegramclone.dto.message.DiscussionMediaContext;
 import com.leanhduc.telegramclone.mapper.MessageMapper;
 import com.leanhduc.telegramclone.model.*;

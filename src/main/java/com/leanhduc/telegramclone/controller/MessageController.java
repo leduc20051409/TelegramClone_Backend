@@ -3,13 +3,11 @@ package com.leanhduc.telegramclone.controller;
 import com.leanhduc.telegramclone.dto.message.ChatMessageResponse;
 import com.leanhduc.telegramclone.dto.message.DiscussionThreadResponse;
 import com.leanhduc.telegramclone.dto.message.EditMessageRequest;
-import com.leanhduc.telegramclone.dto.websocket.DeleteMessageResponse;
-import com.leanhduc.telegramclone.dto.websocket.WsEnvelope;
-import com.leanhduc.telegramclone.service.conversation.IConversationService;
 import com.leanhduc.telegramclone.service.message.IMessageService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
+import com.leanhduc.telegramclone.dto.message.ForwardMessageRequest;
+import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
 
 import java.security.Principal;
@@ -21,8 +19,6 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class MessageController {
     private final IMessageService messageService;
-    private final IConversationService conversationService;
-    private final SimpMessagingTemplate messagingTemplate;
 
     @GetMapping("/{conversationId}")
     public ResponseEntity<List<ChatMessageResponse>> getChatHistory(
@@ -56,18 +52,6 @@ public class MessageController {
     ) {
         UUID currentUserId = UUID.fromString(principal.getName());
         ChatMessageResponse updatedMessage = messageService.editMessage(currentUserId, messageId, request);
-
-        // Broadcast to WebSocket members
-        WsEnvelope<ChatMessageResponse> envelope = WsEnvelope.of("MESSAGE_EDITED", updatedMessage);
-        List<UUID> memberIds = conversationService.getConversationMemberIds(updatedMessage.conversationId());
-        for (UUID memberId : memberIds) {
-            messagingTemplate.convertAndSendToUser(
-                    memberId.toString(),
-                    "/queue/chat",
-                    envelope
-            );
-        }
-
         return ResponseEntity.ok(updatedMessage);
     }
 
@@ -77,20 +61,7 @@ public class MessageController {
             Principal principal
     ) {
         UUID currentUserId = UUID.fromString(principal.getName());
-        UUID conversationId = messageService.deleteMessage(currentUserId, messageId);
-
-        // Broadcast to WebSocket members
-        DeleteMessageResponse deletePayload = new DeleteMessageResponse(messageId, conversationId);
-        WsEnvelope<DeleteMessageResponse> envelope = WsEnvelope.of("MESSAGE_DELETED", deletePayload);
-        List<UUID> memberIds = conversationService.getConversationMemberIds(conversationId);
-        for (UUID memberId : memberIds) {
-            messagingTemplate.convertAndSendToUser(
-                    memberId.toString(),
-                    "/queue/chat",
-                    envelope
-            );
-        }
-
+        messageService.deleteMessage(currentUserId, messageId);
         return ResponseEntity.noContent().build();
     }
 
@@ -104,5 +75,16 @@ public class MessageController {
         UUID currentUserId = UUID.fromString(principal.getName());
         List<ChatMessageResponse> messages = messageService.searchMessages(conversationId, currentUserId, query, date);
         return ResponseEntity.ok(messages);
+    }
+
+    @PostMapping("/{messageId}/forward")
+    public ResponseEntity<List<ChatMessageResponse>> forwardMessage(
+            @PathVariable Long messageId,
+            @Valid @RequestBody ForwardMessageRequest request,
+            Principal principal
+    ) {
+        UUID currentUserId = UUID.fromString(principal.getName());
+        List<ChatMessageResponse> responses = messageService.forwardMessage(currentUserId, messageId, request);
+        return ResponseEntity.ok(responses);
     }
 }

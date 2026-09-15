@@ -1,4 +1,4 @@
-package com.leanhduc.telegramclone.service.Presence;
+package com.leanhduc.telegramclone.event;
 
 import lombok.Getter;
 import org.springframework.context.ApplicationEvent;

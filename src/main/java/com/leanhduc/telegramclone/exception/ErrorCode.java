@@ -46,6 +46,9 @@ public enum ErrorCode {
     MESSAGE_NOT_FOUND("Message not found", HttpStatus.NOT_FOUND),
     UNAUTHORIZED_MESSAGE_ACTION("You can only modify or delete your own messages", HttpStatus.FORBIDDEN),
     SUBSCRIBERS_CANNOT_POST("Subscribers cannot post in a channel", HttpStatus.FORBIDDEN),
+    CANNOT_FORWARD_MESSAGE_TYPE("Cannot forward messages of this type", HttpStatus.BAD_REQUEST),
+    DUPLICATE_TARGET_CONVERSATION("Target conversation list contains duplicate entries", HttpStatus.BAD_REQUEST),
+    NO_TARGET_CONVERSATION("At least one target conversation must be specified", HttpStatus.BAD_REQUEST),
 
     // ================= INVITE LINK =================
     INVITE_LINK_NOT_FOUND("Invite link not found", HttpStatus.NOT_FOUND),

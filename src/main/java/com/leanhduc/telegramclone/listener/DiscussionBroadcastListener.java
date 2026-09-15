@@ -2,7 +2,7 @@ package com.leanhduc.telegramclone.listener;
 
 import com.leanhduc.telegramclone.dto.message.ChatMessageResponse;
 import com.leanhduc.telegramclone.dto.message.CommentCountUpdateDto;
-import com.leanhduc.telegramclone.dto.message.DiscussionBroadcastEvent;
+import com.leanhduc.telegramclone.event.DiscussionBroadcastEvent;
 import com.leanhduc.telegramclone.dto.websocket.WsEnvelope;
 import lombok.RequiredArgsConstructor;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
