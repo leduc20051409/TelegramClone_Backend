@@ -796,7 +796,24 @@ public class MessageService implements IMessageService {
             }
 
             Long viewCount = targetConv.getType() == ConversationType.CHANNEL ? 0L : null;
-            ChatMessageResponse response = messageMapper.toResponse(forwardedMessage, mediaDtos, viewCount, null);
+            Integer initialCommentCount = null;
+
+            if (targetConv.getType() == ConversationType.CHANNEL
+                    && targetConv.getLinkedDiscussionGroupId() != null) {
+                DiscussionMediaContext mediaContext;
+                if (!sourceMediaList.isEmpty()) {
+                    List<UUID> mediaIds = sourceMediaList.stream().map(sm -> sm.getMedia().getId()).toList();
+                    Map<UUID, Media> mediaById = sourceMediaList.stream().collect(
+                            Collectors.toMap(sm -> sm.getMedia().getId(), MessageMedia::getMedia, (m1, m2) -> m1)
+                    );
+                    mediaContext = new DiscussionMediaContext(mediaIds, mediaById, mediaDtos);
+                } else {
+                    mediaContext = DiscussionMediaContext.empty();
+                }
+                initialCommentCount = discussionService.handleChannelPost(forwardedMessage, mediaContext);
+            }
+
+            ChatMessageResponse response = messageMapper.toResponse(forwardedMessage, mediaDtos, viewCount, initialCommentCount);
             responses.add(response);
 
             broadcasts.add(new MessagesForwardedEvent.TargetBroadcastDto(

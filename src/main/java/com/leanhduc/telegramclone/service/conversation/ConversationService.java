@@ -863,28 +863,38 @@ public class ConversationService implements IConversationService {
 
     @Override
     @Transactional(readOnly = true)
-    public DiscussionGroupInfoResponse getLinkedDiscussionGroup(UUID channelId, UUID requesterId) {
-        Conversation channelConv = getConversationOrThrow(channelId);
-        if (channelConv.getType() != ConversationType.CHANNEL) {
+    public DiscussionGroupInfoResponse getLinkedDiscussionGroup(UUID conversationId, UUID requesterId) {
+        Conversation conv = getConversationOrThrow(conversationId);
+        Conversation channelConv;
+        Conversation groupConv;
+
+        if (conv.getType() == ConversationType.CHANNEL) {
+            channelConv = conv;
+            if (!channelConv.isPublic()) {
+                getActiveMemberOrThrow(channelConv.getId(), requesterId);
+            }
+            UUID linkedGroupId = channelConv.getLinkedDiscussionGroupId();
+            if (linkedGroupId == null) {
+                throw new BusinessException(ErrorCode.DISCUSSION_NOT_LINKED);
+            }
+            groupConv = getConversationOrThrow(linkedGroupId);
+        } else if (conv.getType() == ConversationType.GROUP) {
+            groupConv = conv;
+            if (!groupConv.isPublic()) {
+                getActiveMemberOrThrow(groupConv.getId(), requesterId);
+            }
+            channelConv = conversationRepository.findByLinkedDiscussionGroupId(groupConv.getId())
+                    .orElseThrow(() -> new BusinessException(ErrorCode.DISCUSSION_NOT_LINKED));
+        } else {
             throw new BusinessException(ErrorCode.INVALID_CONVERSATION_TYPES);
         }
 
-        if (!channelConv.isPublic()) {
-            getActiveMemberOrThrow(channelId, requesterId);
-        }
-
-        UUID linkedGroupId = channelConv.getLinkedDiscussionGroupId();
-        if (linkedGroupId == null) {
-            throw new BusinessException(ErrorCode.DISCUSSION_NOT_LINKED);
-        }
-
-        Conversation groupConv = getConversationOrThrow(linkedGroupId);
-        int memberCount = memberRepository.findByConversationIdAndLeftAtIsNull(linkedGroupId).size();
+        int memberCount = memberRepository.findByConversationIdAndLeftAtIsNull(groupConv.getId()).size();
         String groupAvatarUrl = resolveMediaUrl(groupConv.getAvatarMediaId());
 
         return new DiscussionGroupInfoResponse(
-                channelId,
-                linkedGroupId,
+                channelConv.getId(),
+                groupConv.getId(),
                 groupConv.getTitle(),
                 groupAvatarUrl,
                 memberCount

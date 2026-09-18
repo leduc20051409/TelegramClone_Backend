@@ -24,7 +24,7 @@ public interface IConversationService {
     ConversationResponse getPublicConversationByUsername(String username);
     DiscussionGroupInfoResponse linkDiscussionGroup(UUID channelId, UUID groupId, UUID requesterId);
     void unlinkDiscussionGroup(UUID channelId, UUID requesterId);
-    DiscussionGroupInfoResponse getLinkedDiscussionGroup(UUID channelId, UUID requesterId);
+    DiscussionGroupInfoResponse getLinkedDiscussionGroup(UUID conversationId, UUID requesterId);
 
     // Permissions management
     void updateDefaultPermissions(UUID requesterId, UUID conversationId, UpdateDefaultPermissionsRequest request);
