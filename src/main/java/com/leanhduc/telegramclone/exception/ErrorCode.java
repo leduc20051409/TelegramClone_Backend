@@ -10,9 +10,13 @@ public enum ErrorCode {
     // ================= AUTH =================
     INVALID_CREDENTIALS("Invalid email or password", HttpStatus.UNAUTHORIZED),
     UNAUTHORIZED("Unauthorized", HttpStatus.UNAUTHORIZED),
-    PASSWORDS_DO_NOT_MATCH("Invalid request", HttpStatus.BAD_REQUEST),
+    PASSWORDS_DO_NOT_MATCH("Passwords do not match", HttpStatus.BAD_REQUEST),
     INVALID_RESET_REQUEST("Invalid or expired request", HttpStatus.BAD_REQUEST),
     INVALID_INPUT("Invalid input parameter", HttpStatus.BAD_REQUEST),
+    EMAIL_ALREADY_EXISTS("Email is already registered", HttpStatus.CONFLICT),
+    VALIDATION_FAILED("Request validation failed", HttpStatus.BAD_REQUEST),
+    METHOD_NOT_ALLOWED("Request method not supported", HttpStatus.METHOD_NOT_ALLOWED),
+    INTERNAL_SERVER_ERROR("Internal server error", HttpStatus.INTERNAL_SERVER_ERROR),
 
     // ================= USER =================
     USER_NOT_FOUND("User not found", HttpStatus.NOT_FOUND),
@@ -68,7 +72,11 @@ public enum ErrorCode {
 
     // ================= PERMISSIONS =================
     PERMISSION_DENIED("Permission denied: you do not have permission to perform this action", HttpStatus.FORBIDDEN),
-    CANNOT_GRANT_UNPOSSESSED_PERMISSION("Admin cannot grant permissions they do not possess", HttpStatus.FORBIDDEN);
+    CANNOT_GRANT_UNPOSSESSED_PERMISSION("Admin cannot grant permissions they do not possess", HttpStatus.FORBIDDEN),
+
+    // ================= SLOW MODE =================
+    SLOW_MODE_ACTIVE("Slow mode is active. Please wait before sending another message", HttpStatus.TOO_MANY_REQUESTS),
+    SLOW_MODE_NOT_SUPPORTED("Slow mode is only supported in group conversations", HttpStatus.BAD_REQUEST);
 
     private final String message;
     private final HttpStatus status;

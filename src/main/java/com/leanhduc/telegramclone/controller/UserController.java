@@ -4,6 +4,7 @@ import com.leanhduc.telegramclone.dto.user.UpdateProfileRequest;
 import com.leanhduc.telegramclone.dto.user.UserDto;
 import com.leanhduc.telegramclone.dto.user.UserSummaryDto;
 import com.leanhduc.telegramclone.service.user.IUserService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -31,7 +32,7 @@ public class UserController {
     }
 
     @PutMapping("/me")
-    public ResponseEntity<UserDto> updateProfile(@RequestBody UpdateProfileRequest request) {
+    public ResponseEntity<UserDto> updateProfile(@Valid @RequestBody UpdateProfileRequest request) {
         UserDto userDto = userService.updateProfile(request);
         return ResponseEntity.ok(userDto);
     }

@@ -4,6 +4,7 @@ import com.leanhduc.telegramclone.dto.contact.AddContactRequest;
 import com.leanhduc.telegramclone.dto.contact.ContactResponse;
 import com.leanhduc.telegramclone.dto.contact.UpdateContactRequest;
 import com.leanhduc.telegramclone.service.contact.IContactService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -22,7 +23,7 @@ public class ContactController {
     @PostMapping
     public ResponseEntity<Void> addContact(
             Principal principal,
-            @RequestBody AddContactRequest request) {
+            @Valid @RequestBody AddContactRequest request) {
         String userIdFromToken = principal.getName();
         UUID ownerId = UUID.fromString(userIdFromToken);
         contactService.addContact(ownerId, request);
@@ -59,7 +60,7 @@ public class ContactController {
     public ResponseEntity<Void> updateStatus(
             Principal principal,
             @PathVariable UUID contactId,
-            @RequestBody UpdateContactRequest request) {
+            @Valid @RequestBody UpdateContactRequest request) {
 
         UUID ownerId = UUID.fromString(principal.getName());
         contactService.updateContactStatus(ownerId, contactId, request);

@@ -53,7 +53,7 @@ public class ConversationController {
 
     @PostMapping("/group")
     public ResponseEntity<ConversationResponse> createGroup(
-            @RequestBody CreateGroupRequest request,
+            @Valid @RequestBody CreateGroupRequest request,
             Principal principal
     ) {
         UUID currentUserId = UUID.fromString(principal.getName());
@@ -82,7 +82,7 @@ public class ConversationController {
     @PostMapping("/{conversationId}/members")
     public ResponseEntity<ConversationResponse> addMember(
             @PathVariable UUID conversationId,
-            @RequestBody AddMemberRequest request,
+            @Valid @RequestBody AddMemberRequest request,
             Principal principal
     ) {
         UUID requesterId = UUID.fromString(principal.getName());
@@ -103,7 +103,7 @@ public class ConversationController {
     @PutMapping("/{conversationId}")
     public ResponseEntity<ConversationResponse> updateConversation(
             @PathVariable UUID conversationId,
-            @RequestBody UpdateConversationRequest request,
+            @Valid @RequestBody UpdateConversationRequest request,
             Principal principal
     ) {
         UUID requesterId = UUID.fromString(principal.getName());
@@ -157,7 +157,7 @@ public class ConversationController {
     public ResponseEntity<Void> updateMemberRole(
             @PathVariable UUID conversationId,
             @PathVariable UUID userId,
-            @RequestBody UpdateRoleRequest request,
+            @Valid @RequestBody UpdateRoleRequest request,
             Principal principal
     ) {
         UUID requesterId = UUID.fromString(principal.getName());
@@ -179,7 +179,7 @@ public class ConversationController {
     @PostMapping("/{conversationId}/views")
     public ResponseEntity<Void> incrementViews(
             @PathVariable UUID conversationId,
-            @RequestBody ChannelViewsRequest request,
+            @Valid @RequestBody ChannelViewsRequest request,
             Principal principal
     ) {
         UUID userId = UUID.fromString(principal.getName());
@@ -301,7 +301,7 @@ public class ConversationController {
     @PutMapping("/{conversationId}/default-permissions")
     public ResponseEntity<Void> updateDefaultPermissions(
             @PathVariable UUID conversationId,
-            @RequestBody UpdateDefaultPermissionsRequest request,
+            @Valid @RequestBody UpdateDefaultPermissionsRequest request,
             Principal principal
     ) {
         UUID requesterId = UUID.fromString(principal.getName());
@@ -313,7 +313,7 @@ public class ConversationController {
     public ResponseEntity<Void> updateMemberPermissions(
             @PathVariable UUID conversationId,
             @PathVariable UUID userId,
-            @RequestBody UpdateMemberPermissionsRequest request,
+            @Valid @RequestBody UpdateMemberPermissionsRequest request,
             Principal principal
     ) {
         UUID requesterId = UUID.fromString(principal.getName());
@@ -325,7 +325,7 @@ public class ConversationController {
     public ResponseEntity<Void> updateAdminPermissions(
             @PathVariable UUID conversationId,
             @PathVariable UUID userId,
-            @RequestBody UpdateAdminPermissionsRequest request,
+            @Valid @RequestBody UpdateAdminPermissionsRequest request,
             Principal principal
     ) {
         UUID requesterId = UUID.fromString(principal.getName());

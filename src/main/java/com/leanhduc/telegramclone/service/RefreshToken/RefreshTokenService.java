@@ -1,7 +1,8 @@
 package com.leanhduc.telegramclone.service.RefreshToken;
 
 import com.leanhduc.telegramclone.dto.auth.RefreshTokenResponse;
-import com.leanhduc.telegramclone.exception.UnauthorizedException;
+import com.leanhduc.telegramclone.exception.BusinessException;
+import com.leanhduc.telegramclone.exception.ErrorCode;
 import com.leanhduc.telegramclone.mapper.RefreshTokenMapper;
 import com.leanhduc.telegramclone.model.RefreshToken;
 import com.leanhduc.telegramclone.model.User;
@@ -32,7 +33,7 @@ public class RefreshTokenService implements IRefreshTokenService {
     @Override
     public RefreshTokenResponse createRefreshToken(String email) {
         User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new UnauthorizedException("User not found"));
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
 
         cleanupOldTokensForUser(user);
 
@@ -68,13 +69,13 @@ public class RefreshTokenService implements IRefreshTokenService {
     @Transactional(readOnly = true)
     public User verifyRefreshToken(String token) {
         if (token == null || token.isBlank()) {
-            throw new UnauthorizedException("Refresh token is required");
+            throw new BusinessException(ErrorCode.UNAUTHORIZED, "Refresh token is required");
         }
         RefreshToken refreshToken = refreshTokenRepository.findById(token)
-                .orElseThrow(() -> new UnauthorizedException("Invalid refresh token"));
+                .orElseThrow(() -> new BusinessException(ErrorCode.UNAUTHORIZED, "Invalid refresh token"));
 
         if (!refreshToken.isValid()) {
-            throw new UnauthorizedException("Refresh token is expired or revoked");
+            throw new BusinessException(ErrorCode.UNAUTHORIZED, "Refresh token is expired or revoked");
         }
 
         return refreshToken.getUser();
@@ -84,7 +85,7 @@ public class RefreshTokenService implements IRefreshTokenService {
     @Transactional
     public void revokeRefreshToken(String token) {
         RefreshToken refreshToken = refreshTokenRepository.findById(token)
-                .orElseThrow(() -> new UnauthorizedException("Invalid refresh token"));
+                .orElseThrow(() -> new BusinessException(ErrorCode.UNAUTHORIZED, "Invalid refresh token"));
 
         refreshToken.setRevoked(true);
         refreshTokenRepository.save(refreshToken);

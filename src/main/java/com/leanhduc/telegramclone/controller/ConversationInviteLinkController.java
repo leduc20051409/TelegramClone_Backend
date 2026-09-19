@@ -5,6 +5,7 @@ import com.leanhduc.telegramclone.dto.invite.InviteLinkInfoResponse;
 import com.leanhduc.telegramclone.dto.invite.InviteLinkResponse;
 import com.leanhduc.telegramclone.dto.invite.UpdateInviteLinkRequest;
 import com.leanhduc.telegramclone.service.invite.IConversationInviteLinkService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -23,7 +24,7 @@ public class ConversationInviteLinkController {
     @PostMapping("/api/conversations/{id}/invite-links")
     public ResponseEntity<InviteLinkResponse> createInviteLink(
             @PathVariable UUID id,
-            @RequestBody CreateInviteLinkRequest request,
+            @Valid @RequestBody CreateInviteLinkRequest request,
             Principal principal
     ) {
         UUID requesterId = UUID.fromString(principal.getName());
@@ -34,7 +35,7 @@ public class ConversationInviteLinkController {
     @PutMapping("/api/invite/{id}")
     public ResponseEntity<InviteLinkResponse> updateInviteLink(
             @PathVariable Long id,
-            @RequestBody UpdateInviteLinkRequest request,
+            @Valid @RequestBody UpdateInviteLinkRequest request,
             Principal principal
     ) {
         UUID requesterId = UUID.fromString(principal.getName());

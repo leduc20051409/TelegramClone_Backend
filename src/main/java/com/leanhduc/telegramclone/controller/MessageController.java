@@ -47,7 +47,7 @@ public class MessageController {
     @PutMapping("/{messageId}")
     public ResponseEntity<ChatMessageResponse> editMessage(
             @PathVariable Long messageId,
-            @RequestBody EditMessageRequest request,
+            @Valid @RequestBody EditMessageRequest request,
             Principal principal
     ) {
         UUID currentUserId = UUID.fromString(principal.getName());

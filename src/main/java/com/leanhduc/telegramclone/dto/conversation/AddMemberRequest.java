@@ -1,5 +1,6 @@
 package com.leanhduc.telegramclone.dto.conversation;
 
+import jakarta.validation.constraints.NotNull;
 import lombok.*;
 import java.util.UUID;
 
@@ -8,5 +9,6 @@ import java.util.UUID;
 @AllArgsConstructor
 @Builder
 public class AddMemberRequest {
+    @NotNull(message = "User ID is required")
     private UUID userId;
 }

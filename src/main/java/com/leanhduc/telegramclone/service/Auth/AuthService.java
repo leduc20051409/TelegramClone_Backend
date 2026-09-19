@@ -46,10 +46,10 @@ public class AuthService implements IAuthService {
     @Transactional
     public AuthResponse register(RegisterRequest registerRequest) {
         if (userRepository.existsByEmail(registerRequest.getEmail())) {
-            throw new BusinessException(ErrorCode.INVALID_CREDENTIALS);
+            throw new BusinessException(ErrorCode.EMAIL_ALREADY_EXISTS);
         }
         if (userRepository.existsByUsername(registerRequest.getUsername())) {
-            throw new BusinessException(ErrorCode.INVALID_CREDENTIALS);
+            throw new BusinessException(ErrorCode.USERNAME_ALREADY_EXISTS);
         }
         User user = userMapper.toEntity(registerRequest);
         user.setPasswordHash(passwordEncoder.encode(registerRequest.getPassword()));
@@ -76,14 +76,6 @@ public class AuthService implements IAuthService {
         User user = userDetails.getUser();
 
         return buildAuthResponse(user);
-
-//        User user = userRepository.findByEmail(loginRequest.getEmail())
-//                .orElseThrow(() -> new UnauthorizedException("Invalid email or password"));
-//        if (!passwordEncoder.matches(loginRequest.getPassword(), user.getPasswordHash())) {
-//            throw new UnauthorizedException("Invalid email or password");
-//        }
-//        log.info("User logged in successfully: {}", user.getEmail());
-//        return buildAuthResponse(user);
     }
 
     @Override

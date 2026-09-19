@@ -3,7 +3,8 @@ package com.leanhduc.telegramclone.service.user;
 import com.leanhduc.telegramclone.dto.user.UpdateProfileRequest;
 import com.leanhduc.telegramclone.dto.user.UserDto;
 import com.leanhduc.telegramclone.dto.user.UserSummaryDto;
-import com.leanhduc.telegramclone.exception.NotFoundException;
+import com.leanhduc.telegramclone.exception.BusinessException;
+import com.leanhduc.telegramclone.exception.ErrorCode;
 import com.leanhduc.telegramclone.mapper.UserMapper;
 import com.leanhduc.telegramclone.model.User;
 import com.leanhduc.telegramclone.repository.MediaRepository;
@@ -29,8 +30,8 @@ public class UserService implements IUserService{
     public UserDto getCurrentUser() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         UUID userId = (UUID) auth.getPrincipal();
-        User user = userRepository.findById(userId).
-                orElseThrow(() -> new NotFoundException("User not found with id: " + userId));
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
 
         UserDto dto = userMapper.toDto(user);
         dto.setAvatarUrl(resolveAvatarUrl(user.getAvatarMediaId()));
@@ -41,8 +42,8 @@ public class UserService implements IUserService{
 
     @Override
     public UserSummaryDto getUserById(UUID userId) {
-        User user = userRepository.findById(userId).
-                orElseThrow(() -> new NotFoundException("User not found with id: " + userId));
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
         UserSummaryDto dto = userMapper.toSummaryDto(user);
         dto.setAvatarUrl(resolveAvatarUrl(user.getAvatarMediaId()));
         dto.setOnline(presenceService.isUserOnline(userId));
@@ -54,8 +55,8 @@ public class UserService implements IUserService{
     public UserDto updateProfile(UpdateProfileRequest request) {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         UUID userId = (UUID) auth.getPrincipal();
-        User user = userRepository.findById(userId).
-                orElseThrow(() -> new NotFoundException("User not found with id: " + userId));
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
         if (request.getDisplayName() != null) {
             user.setDisplayName(request.getDisplayName());
         }

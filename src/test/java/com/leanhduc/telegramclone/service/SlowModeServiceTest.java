@@ -28,7 +28,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -139,7 +138,7 @@ class SlowModeServiceTest {
                     .thenReturn(List.of());
             when(unreadCounterRepository.findById(any())).thenReturn(Optional.empty());
             when(pinnedMessageRepository.findAllByConversationIdOrderByPinnedAtDesc(conversationId)).thenReturn(List.of());
-            when(memberRepository.findByConversationIdAndLeftAtIsNull(conversationId)).thenReturn(List.of());
+            when(memberRepository.findByConversationIdAndLeftAtIsNull(conversationId)).thenReturn(List.of(adminMember));
 
             ConversationResponse response = conversationService.setSlowMode(adminUserId, conversationId, 30);
 
@@ -148,7 +147,11 @@ class SlowModeServiceTest {
             verify(conversationRepository).save(groupConversation);
 
             // Verify CONVERSATION_UPDATED WebSocket broadcast
-            verify(conversationRepository, atLeastOnce()).save(any());
+            verify(messagingTemplate).convertAndSendToUser(
+                    eq(adminUserId.toString()),
+                    eq("/queue/chat"),
+                    any(WsEnvelope.class)
+            );
         }
 
         @Test
@@ -318,8 +321,7 @@ class SlowModeServiceTest {
             when(messageRepository.save(any(Message.class))).thenReturn(savedMessage);
             ChatMessageResponse responseMock = new ChatMessageResponse(
                     100L, conversationId, senderId, "alice", "Hello everyone",
-                    Instant.now(), null, MessageType.TEXT, List.of(), false,
-                    null, null, null, null, null, null, null, null
+                    Instant.now(), List.of(), false, null, null, "TEXT", null
             );
             when(messageMapper.toResponse(any(), any(), any(), any())).thenReturn(responseMock);
 
@@ -522,8 +524,7 @@ class SlowModeServiceTest {
             when(messageRepository.save(any(Message.class))).thenReturn(savedMessage);
             ChatMessageResponse responseMock = new ChatMessageResponse(
                     200L, conversationId, senderId, "alice", "Concurrent msg",
-                    Instant.now(), null, MessageType.TEXT, List.of(), false,
-                    null, null, null, null, null, null, null, null
+                    Instant.now(), List.of(), false, null, null, "TEXT", null
             );
             when(messageMapper.toResponse(any(), any(), any(), any())).thenReturn(responseMock);
 

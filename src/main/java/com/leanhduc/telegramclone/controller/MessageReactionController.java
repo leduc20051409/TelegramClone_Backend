@@ -7,6 +7,7 @@ import com.leanhduc.telegramclone.dto.websocket.MessageReactionEventDto;
 import com.leanhduc.telegramclone.dto.websocket.WsEnvelope;
 import com.leanhduc.telegramclone.service.conversation.IConversationService;
 import com.leanhduc.telegramclone.service.message.IMessageReactionService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
@@ -28,7 +29,7 @@ public class MessageReactionController {
     @PostMapping("/{messageId}/reactions")
     public ResponseEntity<List<MessageReactionDto>> toggleReaction(
             @PathVariable Long messageId,
-            @RequestBody ToggleReactionRequest request,
+            @Valid @RequestBody ToggleReactionRequest request,
             Principal principal
     ) {
         UUID currentUserId = UUID.fromString(principal.getName());
