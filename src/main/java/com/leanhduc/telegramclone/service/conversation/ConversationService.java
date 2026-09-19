@@ -20,6 +20,7 @@ import com.leanhduc.telegramclone.service.invite.IConversationInviteLinkService;
 import com.leanhduc.telegramclone.dto.websocket.MemberEventResponse;
 import com.leanhduc.telegramclone.dto.websocket.WsEnvelope;
 import com.leanhduc.telegramclone.model.enums.MessageType;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
@@ -27,6 +28,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 @Service
@@ -48,6 +50,7 @@ public class ConversationService implements IConversationService {
     private final IConversationInviteLinkService inviteLinkService;
     private final SimpMessagingTemplate messagingTemplate;
     private final IPermissionService permissionService;
+    private final RedisTemplate<String, String> redisTemplate;
 
     @Override
     @Transactional
@@ -693,7 +696,8 @@ public class ConversationService implements IConversationService {
                 getPinnedMessagesForConversation(conv.getId()),
                 conv.getUsername(),
                 conv.isPublic(),
-                conv.getLinkedDiscussionGroupId()
+                conv.getLinkedDiscussionGroupId(),
+                conv.getSlowModeDelaySeconds() != null ? conv.getSlowModeDelaySeconds() : 0
         );
     }
 
@@ -899,5 +903,55 @@ public class ConversationService implements IConversationService {
                 groupAvatarUrl,
                 memberCount
         );
+    }
+
+    @Override
+    @Transactional
+    public ConversationResponse setSlowMode(UUID requesterId, UUID conversationId, int seconds) {
+        Conversation conversation = getConversationOrThrow(conversationId);
+        if (conversation.getType() != ConversationType.GROUP) {
+            throw new BusinessException(ErrorCode.SLOW_MODE_NOT_SUPPORTED);
+        }
+
+        ConversationMember requesterMember = getActiveMemberOrThrow(conversationId, requesterId);
+        if (!permissionService.hasAdminPermission(requesterMember, AdminPermission.CHANGE_INFO)) {
+            throw new BusinessException(ErrorCode.PERMISSION_DENIED);
+        }
+
+        conversation.setSlowModeDelaySeconds(seconds);
+        conversation = conversationRepository.save(conversation);
+
+        ConversationResponse updatedResponse = mapToConversationResponse(conversation, requesterId);
+        WsEnvelope<ConversationResponse> envelope = WsEnvelope.of("CONVERSATION_UPDATED", updatedResponse);
+        broadcastEnvelopeToMembers(conversation, envelope, null);
+
+        return updatedResponse;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public SlowModeStatusResponse getSlowModeStatus(UUID userId, UUID conversationId) {
+        Conversation conversation = getConversationOrThrow(conversationId);
+        ConversationMember member = getActiveMemberOrThrow(conversationId, userId);
+
+        if (conversation.getType() != ConversationType.GROUP) {
+            return new SlowModeStatusResponse(conversationId, 0, 0L);
+        }
+
+        int delay = conversation.getSlowModeDelaySeconds() != null ? conversation.getSlowModeDelaySeconds() : 0;
+        if (delay == 0) {
+            return new SlowModeStatusResponse(conversationId, 0, 0L);
+        }
+
+        // Owner and Admins are exempt from Slow Mode cooldown
+        if (member.getRole() == ConversationRole.OWNER || member.getRole() == ConversationRole.ADMIN) {
+            return new SlowModeStatusResponse(conversationId, delay, 0L);
+        }
+
+        String key = "slowmode:" + conversationId + ":" + userId;
+        Long ttl = redisTemplate.getExpire(key, TimeUnit.SECONDS);
+        long remainingCooldown = (ttl != null && ttl > 0) ? ttl : 0L;
+
+        return new SlowModeStatusResponse(conversationId, delay, remainingCooldown);
     }
 }

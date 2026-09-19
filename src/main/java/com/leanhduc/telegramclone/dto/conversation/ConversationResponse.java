@@ -24,8 +24,20 @@ public record ConversationResponse(
         List<ChatMessageResponse> pinnedMessages,
         String username,
         boolean isPublic,
-        UUID linkedDiscussionGroupId
+        UUID linkedDiscussionGroupId,
+        Integer slowModeDelaySeconds
 ) {
+    public ConversationResponse(UUID id, ConversationType type, String title, Instant createdAt,
+                                String lastMessage, Instant lastMessageTimestamp, UUID partnerId,
+                                String avatarUrl, UUID avatarMediaId, String description,
+                                List<UserDto> participants, UUID lastMessageSenderId,
+                                Integer unreadCount, List<ChatMessageResponse> pinnedMessages,
+                                String username, boolean isPublic, UUID linkedDiscussionGroupId) {
+        this(id, type, title, createdAt, lastMessage, lastMessageTimestamp, partnerId,
+             avatarUrl, avatarMediaId, description, participants, lastMessageSenderId,
+             unreadCount, pinnedMessages, username, isPublic, linkedDiscussionGroupId, 0);
+    }
+
     public ConversationResponse(UUID id, ConversationType type, String title, Instant createdAt,
                                 String lastMessage, Instant lastMessageTimestamp, UUID partnerId,
                                 String avatarUrl, UUID avatarMediaId, String description,
@@ -34,6 +46,6 @@ public record ConversationResponse(
                                 String username, boolean isPublic) {
         this(id, type, title, createdAt, lastMessage, lastMessageTimestamp, partnerId,
              avatarUrl, avatarMediaId, description, participants, lastMessageSenderId,
-             unreadCount, pinnedMessages, username, isPublic, null);
+             unreadCount, pinnedMessages, username, isPublic, null, 0);
     }
 }

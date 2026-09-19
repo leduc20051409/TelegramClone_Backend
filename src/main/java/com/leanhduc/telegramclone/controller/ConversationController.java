@@ -10,6 +10,8 @@ import com.leanhduc.telegramclone.dto.conversation.UpdateMemberPermissionsReques
 import com.leanhduc.telegramclone.dto.conversation.UpdateAdminPermissionsRequest;
 import com.leanhduc.telegramclone.dto.conversation.UpdateRoleRequest;
 import com.leanhduc.telegramclone.dto.conversation.ConversationResponse;
+import com.leanhduc.telegramclone.dto.conversation.SetSlowModeRequest;
+import com.leanhduc.telegramclone.dto.conversation.SlowModeStatusResponse;
 import com.leanhduc.telegramclone.dto.user.UserDto;
 import com.leanhduc.telegramclone.service.conversation.IConversationService;
 import com.leanhduc.telegramclone.service.message.IMessageService;
@@ -339,6 +341,29 @@ public class ConversationController {
     ) {
         UUID requesterId = UUID.fromString(principal.getName());
         UserDto response = conversationService.getMemberPermissions(requesterId, conversationId, userId);
+        return ResponseEntity.ok(response);
+    }
+
+    // ================= SLOW MODE ENDPOINTS =================
+
+    @PutMapping("/{conversationId}/slow-mode")
+    public ResponseEntity<ConversationResponse> setSlowMode(
+            @PathVariable UUID conversationId,
+            @Valid @RequestBody SetSlowModeRequest request,
+            Principal principal
+    ) {
+        UUID requesterId = UUID.fromString(principal.getName());
+        ConversationResponse response = conversationService.setSlowMode(requesterId, conversationId, request.seconds());
+        return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/{conversationId}/slow-mode")
+    public ResponseEntity<SlowModeStatusResponse> getSlowModeStatus(
+            @PathVariable UUID conversationId,
+            Principal principal
+    ) {
+        UUID userId = UUID.fromString(principal.getName());
+        SlowModeStatusResponse response = conversationService.getSlowModeStatus(userId, conversationId);
         return ResponseEntity.ok(response);
     }
 }

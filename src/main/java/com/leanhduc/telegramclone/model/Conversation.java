@@ -49,6 +49,10 @@ public class Conversation {
     @Column(name = "created_by")
     private UUID createdBy;
 
+    @Column(name = "slow_mode_delay_seconds")
+    @Builder.Default
+    private Integer slowModeDelaySeconds = 0;
+
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)
     private Instant createdAt;

@@ -31,4 +31,8 @@ public interface IConversationService {
     void updateMemberPermissions(UUID requesterId, UUID conversationId, UUID targetUserId, UpdateMemberPermissionsRequest request);
     void updateAdminPermissions(UUID requesterId, UUID conversationId, UUID targetUserId, UpdateAdminPermissionsRequest request);
     UserDto getMemberPermissions(UUID requesterId, UUID conversationId, UUID targetUserId);
+
+    // Slow mode management
+    ConversationResponse setSlowMode(UUID requesterId, UUID conversationId, int seconds);
+    SlowModeStatusResponse getSlowModeStatus(UUID userId, UUID conversationId);
 }

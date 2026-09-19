@@ -16,11 +16,7 @@ import com.leanhduc.telegramclone.exception.BusinessException;
 import com.leanhduc.telegramclone.exception.ErrorCode;
 import com.leanhduc.telegramclone.mapper.MessageMapper;
 import com.leanhduc.telegramclone.model.*;
-import com.leanhduc.telegramclone.model.enums.AdminPermission;
-import com.leanhduc.telegramclone.model.enums.ConversationType;
-import com.leanhduc.telegramclone.model.enums.MediaStatus;
-import com.leanhduc.telegramclone.model.enums.MemberPermission;
-import com.leanhduc.telegramclone.model.enums.MessageType;
+import com.leanhduc.telegramclone.model.enums.*;
 import com.leanhduc.telegramclone.repository.*;
 import com.leanhduc.telegramclone.service.conversation.IPermissionService;
 import com.leanhduc.telegramclone.service.message.discussion.IDiscussionService;
@@ -77,6 +73,7 @@ public class MessageService implements IMessageService {
             throw new BusinessException(ErrorCode.NOT_IN_CONVERSATION);
         }
 
+        String slowModeRedisKey = null;
         if (conversation.getType() == ConversationType.CHANNEL) {
             if (!permissionService.hasAdminPermission(member, AdminPermission.POST_MESSAGES)) {
                 throw new BusinessException(ErrorCode.SUBSCRIBERS_CANNOT_POST);
@@ -84,6 +81,19 @@ public class MessageService implements IMessageService {
         } else if (conversation.getType() == ConversationType.GROUP) {
             if (!permissionService.hasMemberPermission(member, MemberPermission.SEND_MESSAGES)) {
                 throw new BusinessException(ErrorCode.PERMISSION_DENIED);
+            }
+            int slowModeDelay = conversation.getSlowModeDelaySeconds() != null ? conversation.getSlowModeDelaySeconds() : 0;
+            boolean isExempt = member.getRole() == ConversationRole.OWNER || member.getRole() == ConversationRole.ADMIN;
+            if (slowModeDelay > 0 && !isExempt) {
+                String key = "slowmode:" + conversation.getId() + ":" + senderId;
+                Boolean acquired = redisTemplate.opsForValue().setIfAbsent(key, "1", slowModeDelay, TimeUnit.SECONDS);
+                if (Boolean.FALSE.equals(acquired)) {
+                    Long ttl = redisTemplate.getExpire(key, TimeUnit.SECONDS);
+                    long waitTime = (ttl != null && ttl > 0) ? ttl : slowModeDelay;
+                    throw new BusinessException(ErrorCode.SLOW_MODE_ACTIVE,
+                            "Slow mode is active. Please wait " + waitTime + " seconds before sending another message");
+                }
+                slowModeRedisKey = key;
             }
         } else if (conversation.getType() == ConversationType.PRIVATE) {
             List<ConversationMember> members = memberRepository.findByConversationIdAndLeftAtIsNull(conversation.getId());
@@ -103,83 +113,90 @@ public class MessageService implements IMessageService {
             }
         }
 
-        User sender = userRepository.findById(senderId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+        try {
+            User sender = userRepository.findById(senderId)
+                    .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
 
-        List<UUID> mediaIds = request.mediaIds() == null ? List.of() : request.mediaIds();
-        MessageType messageType = mediaIds.isEmpty() ? MessageType.TEXT : MessageType.FILE;
-        Map<UUID, Media> mediaById = Collections.emptyMap();
-        if (!mediaIds.isEmpty()) {
-            if (!permissionService.hasMemberPermission(member, MemberPermission.SEND_MEDIA)) {
-                throw new BusinessException(ErrorCode.PERMISSION_DENIED);
-            }
-            Set<UUID> uniqueMediaIds = mediaIds.stream().collect(Collectors.toSet());
-            if (uniqueMediaIds.size() != mediaIds.size()) {
-                throw new BusinessException(ErrorCode.DUPLICATE_MEDIA);
-            }
-            List<Media> mediaList = mediaRepository.findByIdInAndOwnerId(new ArrayList<>(uniqueMediaIds), senderId);
-            if (mediaList.size() != uniqueMediaIds.size()) {
-                throw new BusinessException(ErrorCode.MEDIA_NOT_ACCESSIBLE);
-            }
-            mediaById = mediaList.stream().collect(Collectors.toMap(Media::getId, media -> media));
-        }
-
-        Message replyTo = null;
-        if (request.replyToMessageId() != null) {
-            replyTo = messageRepository
-                    .findByIdAndConversationId(request.replyToMessageId(), request.conversationId())
-                    .orElseThrow(() -> new BusinessException(ErrorCode.MESSAGE_NOT_FOUND));
-        }
-
-        Message message = Message.builder()
-                .conversation(conversation)
-                .sender(sender)
-                .body(request.message())
-                .messageType(messageType)
-                .deleted(false)
-                .replyTo(replyTo)
-                .build();
-
-        message = messageRepository.save(message);
-
-        if (!mediaIds.isEmpty()) {
-            List<MessageMedia> messageMediaList = new ArrayList<>();
-            for (int i = 0; i < mediaIds.size(); i++) {
-                UUID mediaId = mediaIds.get(i);
-                Media media = mediaById.get(mediaId);
-                if (media.getStatus() != MediaStatus.TEMP) {
+            List<UUID> mediaIds = request.mediaIds() == null ? List.of() : request.mediaIds();
+            MessageType messageType = mediaIds.isEmpty() ? MessageType.TEXT : MessageType.FILE;
+            Map<UUID, Media> mediaById = Collections.emptyMap();
+            if (!mediaIds.isEmpty()) {
+                if (!permissionService.hasMemberPermission(member, MemberPermission.SEND_MEDIA)) {
+                    throw new BusinessException(ErrorCode.PERMISSION_DENIED);
+                }
+                Set<UUID> uniqueMediaIds = mediaIds.stream().collect(Collectors.toSet());
+                if (uniqueMediaIds.size() != mediaIds.size()) {
+                    throw new BusinessException(ErrorCode.DUPLICATE_MEDIA);
+                }
+                List<Media> mediaList = mediaRepository.findByIdInAndOwnerId(new ArrayList<>(uniqueMediaIds), senderId);
+                if (mediaList.size() != uniqueMediaIds.size()) {
                     throw new BusinessException(ErrorCode.MEDIA_NOT_ACCESSIBLE);
                 }
-                MessageMediaId id = new MessageMediaId(message.getId(), mediaId);
-                MessageMedia messageMedia = MessageMedia.builder()
-                        .id(id)
-                        .message(message)
-                        .media(media)
-                        .ordinal(i)
-                        .build();
-                messageMediaList.add(messageMedia);
-                media.setStatus(MediaStatus.ACTIVE);
+                mediaById = mediaList.stream().collect(Collectors.toMap(Media::getId, media -> media));
             }
-            messageMediaRepository.saveAll(messageMediaList);
-            mediaRepository.saveAll(mediaById.values());
+
+            Message replyTo = null;
+            if (request.replyToMessageId() != null) {
+                replyTo = messageRepository
+                        .findByIdAndConversationId(request.replyToMessageId(), request.conversationId())
+                        .orElseThrow(() -> new BusinessException(ErrorCode.MESSAGE_NOT_FOUND));
+            }
+
+            Message message = Message.builder()
+                    .conversation(conversation)
+                    .sender(sender)
+                    .body(request.message())
+                    .messageType(messageType)
+                    .deleted(false)
+                    .replyTo(replyTo)
+                    .build();
+
+            message = messageRepository.save(message);
+
+            if (!mediaIds.isEmpty()) {
+                List<MessageMedia> messageMediaList = new ArrayList<>();
+                for (int i = 0; i < mediaIds.size(); i++) {
+                    UUID mediaId = mediaIds.get(i);
+                    Media media = mediaById.get(mediaId);
+                    if (media.getStatus() != MediaStatus.TEMP) {
+                        throw new BusinessException(ErrorCode.MEDIA_NOT_ACCESSIBLE);
+                    }
+                    MessageMediaId id = new MessageMediaId(message.getId(), mediaId);
+                    MessageMedia messageMedia = MessageMedia.builder()
+                            .id(id)
+                            .message(message)
+                            .media(media)
+                            .ordinal(i)
+                            .build();
+                    messageMediaList.add(messageMedia);
+                    media.setStatus(MediaStatus.ACTIVE);
+                }
+                messageMediaRepository.saveAll(messageMediaList);
+                mediaRepository.saveAll(mediaById.values());
+            }
+
+            List<MediaAttachmentDto> mediaDtos = buildMediaDtos(mediaIds, mediaById);
+            Long viewCount = conversation.getType() == ConversationType.CHANNEL ? 0L : null;
+            Integer initialCommentCount = null;
+
+            if (conversation.getType() == ConversationType.CHANNEL
+                    && conversation.getLinkedDiscussionGroupId() != null) {
+                DiscussionMediaContext mediaContext =
+                        new DiscussionMediaContext(mediaIds, mediaById, mediaDtos);
+                initialCommentCount = discussionService.handleChannelPost(message, mediaContext);
+            }
+
+            if (conversation.getType() == ConversationType.GROUP && replyTo != null) {
+                discussionService.handleCommentCreated(message);
+            }
+
+            return messageMapper.toResponse(message, mediaDtos, viewCount, initialCommentCount);
+        } catch (Exception ex) {
+            if (slowModeRedisKey != null) {
+                redisTemplate.delete(slowModeRedisKey);
+            }
+            throw ex;
         }
-
-        List<MediaAttachmentDto> mediaDtos = buildMediaDtos(mediaIds, mediaById);
-        Long viewCount = conversation.getType() == ConversationType.CHANNEL ? 0L : null;
-        Integer initialCommentCount = null;
-
-        if (conversation.getType() == ConversationType.CHANNEL
-                && conversation.getLinkedDiscussionGroupId() != null) {
-            DiscussionMediaContext mediaContext =
-                    new DiscussionMediaContext(mediaIds, mediaById, mediaDtos);
-            initialCommentCount = discussionService.handleChannelPost(message, mediaContext);
-        }
-
-        if (conversation.getType() == ConversationType.GROUP && replyTo != null) {
-            discussionService.handleCommentCreated(message);
-        }
-
-        return messageMapper.toResponse(message, mediaDtos, viewCount, initialCommentCount);
     }
 
 
@@ -708,126 +725,147 @@ public class MessageService implements IMessageService {
         Instant forwardedAt = Instant.now();
 
         // 3. Pre-validate ALL target conversations (All-or-Nothing policy)
-        Map<UUID, TargetValidationContext> targetContexts = new LinkedHashMap<>();
+        List<String> acquiredSlowModeKeys = new ArrayList<>();
+        try {
+            Map<UUID, TargetValidationContext> targetContexts = new LinkedHashMap<>();
 
-        for (UUID targetConvId : request.targetConversationIds()) {
-            Conversation targetConv = conversationRepository.findById(targetConvId)
-                    .orElseThrow(() -> new BusinessException(ErrorCode.CONVERSATION_NOT_FOUND));
+            for (UUID targetConvId : request.targetConversationIds()) {
+                Conversation targetConv = conversationRepository.findById(targetConvId)
+                        .orElseThrow(() -> new BusinessException(ErrorCode.CONVERSATION_NOT_FOUND));
 
-            ConversationMember member = memberRepository.findById(new ConversationMemberId(targetConvId, currentUserId))
-                    .orElseThrow(() -> new BusinessException(ErrorCode.NOT_IN_CONVERSATION));
+                ConversationMember member = memberRepository.findById(new ConversationMemberId(targetConvId, currentUserId))
+                        .orElseThrow(() -> new BusinessException(ErrorCode.NOT_IN_CONVERSATION));
 
-            if (member.getLeftAt() != null) {
-                throw new BusinessException(ErrorCode.NOT_IN_CONVERSATION);
-            }
-
-            if (targetConv.getType() == ConversationType.CHANNEL) {
-                if (!permissionService.hasAdminPermission(member, AdminPermission.POST_MESSAGES)) {
-                    throw new BusinessException(ErrorCode.SUBSCRIBERS_CANNOT_POST);
+                if (member.getLeftAt() != null) {
+                    throw new BusinessException(ErrorCode.NOT_IN_CONVERSATION);
                 }
-            } else if (targetConv.getType() == ConversationType.GROUP) {
-                if (!permissionService.hasMemberPermission(member, MemberPermission.SEND_MESSAGES)) {
-                    throw new BusinessException(ErrorCode.PERMISSION_DENIED);
+
+                if (targetConv.getType() == ConversationType.CHANNEL) {
+                    if (!permissionService.hasAdminPermission(member, AdminPermission.POST_MESSAGES)) {
+                        throw new BusinessException(ErrorCode.SUBSCRIBERS_CANNOT_POST);
+                    }
+                } else if (targetConv.getType() == ConversationType.GROUP) {
+                    if (!permissionService.hasMemberPermission(member, MemberPermission.SEND_MESSAGES)) {
+                        throw new BusinessException(ErrorCode.PERMISSION_DENIED);
+                    }
+                    int slowModeDelay = targetConv.getSlowModeDelaySeconds() != null ? targetConv.getSlowModeDelaySeconds() : 0;
+                    boolean isExempt = member.getRole() == ConversationRole.OWNER || member.getRole() == ConversationRole.ADMIN;
+                    if (slowModeDelay > 0 && !isExempt) {
+                        String key = "slowmode:" + targetConvId + ":" + currentUserId;
+                        Boolean acquired = redisTemplate.opsForValue().setIfAbsent(key, "1", slowModeDelay, TimeUnit.SECONDS);
+                        if (Boolean.FALSE.equals(acquired)) {
+                            Long ttl = redisTemplate.getExpire(key, TimeUnit.SECONDS);
+                            long waitTime = (ttl != null && ttl > 0) ? ttl : slowModeDelay;
+                            throw new BusinessException(ErrorCode.SLOW_MODE_ACTIVE,
+                                    "Slow mode is active for group " + targetConv.getTitle() + ". Please wait " + waitTime + " seconds before sending another message");
+                        }
+                        acquiredSlowModeKeys.add(key);
+                    }
+                } else if (targetConv.getType() == ConversationType.PRIVATE) {
+                    List<ConversationMember> convMembers = memberRepository.findByConversationIdAndLeftAtIsNull(targetConvId);
+                    UUID partnerId = convMembers.stream()
+                            .map(m -> m.getUser().getId())
+                            .filter(id -> !id.equals(currentUserId))
+                            .findFirst()
+                            .orElse(null);
+
+                    if (partnerId != null) {
+                        if (contactRepository.existsByOwnerIdAndContactIdAndIsBlockedTrue(partnerId, currentUserId)) {
+                            throw new BusinessException(ErrorCode.USER_BLOCKED);
+                        }
+                        if (contactRepository.existsByOwnerIdAndContactIdAndIsBlockedTrue(currentUserId, partnerId)) {
+                            throw new BusinessException(ErrorCode.CANNOT_MESSAGE_BLOCKED_USER);
+                        }
+                    }
                 }
-            } else if (targetConv.getType() == ConversationType.PRIVATE) {
-                List<ConversationMember> convMembers = memberRepository.findByConversationIdAndLeftAtIsNull(targetConvId);
-                UUID partnerId = convMembers.stream()
+
+                List<UUID> memberIds = memberRepository.findByConversationIdAndLeftAtIsNull(targetConvId).stream()
                         .map(m -> m.getUser().getId())
-                        .filter(id -> !id.equals(currentUserId))
-                        .findFirst()
-                        .orElse(null);
+                        .toList();
 
-                if (partnerId != null) {
-                    if (contactRepository.existsByOwnerIdAndContactIdAndIsBlockedTrue(partnerId, currentUserId)) {
-                        throw new BusinessException(ErrorCode.USER_BLOCKED);
-                    }
-                    if (contactRepository.existsByOwnerIdAndContactIdAndIsBlockedTrue(currentUserId, partnerId)) {
-                        throw new BusinessException(ErrorCode.CANNOT_MESSAGE_BLOCKED_USER);
-                    }
-                }
+                targetContexts.put(targetConvId, new TargetValidationContext(targetConv, member, memberIds));
             }
 
-            List<UUID> memberIds = memberRepository.findByConversationIdAndLeftAtIsNull(targetConvId).stream()
-                    .map(m -> m.getUser().getId())
-                    .toList();
+            // 4. Retrieve source media attachments if any
+            List<MessageMedia> sourceMediaList = messageMediaRepository.findByMessageIdInWithMedia(List.of(messageId));
 
-            targetContexts.put(targetConvId, new TargetValidationContext(targetConv, member, memberIds));
-        }
+            // 5. Create new forwarded messages across all targets
+            List<ChatMessageResponse> responses = new ArrayList<>();
+            List<MessagesForwardedEvent.TargetBroadcastDto> broadcasts = new ArrayList<>();
 
-        // 4. Retrieve source media attachments if any
-        List<MessageMedia> sourceMediaList = messageMediaRepository.findByMessageIdInWithMedia(List.of(messageId));
+            for (UUID targetConvId : request.targetConversationIds()) {
+                TargetValidationContext context = targetContexts.get(targetConvId);
+                Conversation targetConv = context.conversation();
 
-        // 5. Create new forwarded messages across all targets
-        List<ChatMessageResponse> responses = new ArrayList<>();
-        List<MessagesForwardedEvent.TargetBroadcastDto> broadcasts = new ArrayList<>();
+                Message forwardedMessage = Message.builder()
+                        .conversation(targetConv)
+                        .sender(currentUser)
+                        .body(sourceMessage.getBody())
+                        .messageType(sourceMessage.getMessageType())
+                        .deleted(false)
+                        .forwardedFromUser(originalSender)
+                        .forwardedFromConversation(originalConversation)
+                        .forwardedAt(forwardedAt)
+                        .build();
 
-        for (UUID targetConvId : request.targetConversationIds()) {
-            TargetValidationContext context = targetContexts.get(targetConvId);
-            Conversation targetConv = context.conversation();
+                forwardedMessage = messageRepository.save(forwardedMessage);
 
-            Message forwardedMessage = Message.builder()
-                    .conversation(targetConv)
-                    .sender(currentUser)
-                    .body(sourceMessage.getBody())
-                    .messageType(sourceMessage.getMessageType())
-                    .deleted(false)
-                    .forwardedFromUser(originalSender)
-                    .forwardedFromConversation(originalConversation)
-                    .forwardedAt(forwardedAt)
-                    .build();
-
-            forwardedMessage = messageRepository.save(forwardedMessage);
-
-            // Associate existing media to the new message
-            List<MediaAttachmentDto> mediaDtos = new ArrayList<>();
-            if (!sourceMediaList.isEmpty()) {
-                List<MessageMedia> newMediaList = new ArrayList<>();
-                for (MessageMedia sm : sourceMediaList) {
-                    MessageMedia mm = MessageMedia.builder()
-                            .id(new MessageMediaId(forwardedMessage.getId(), sm.getMedia().getId()))
-                            .message(forwardedMessage)
-                            .media(sm.getMedia())
-                            .ordinal(sm.getOrdinal())
-                            .build();
-                    newMediaList.add(mm);
-                    mediaDtos.add(toMediaDto(sm.getMedia()));
-                }
-                messageMediaRepository.saveAll(newMediaList);
-            }
-
-            Long viewCount = targetConv.getType() == ConversationType.CHANNEL ? 0L : null;
-            Integer initialCommentCount = null;
-
-            if (targetConv.getType() == ConversationType.CHANNEL
-                    && targetConv.getLinkedDiscussionGroupId() != null) {
-                DiscussionMediaContext mediaContext;
+                // Associate existing media to the new message
+                List<MediaAttachmentDto> mediaDtos = new ArrayList<>();
                 if (!sourceMediaList.isEmpty()) {
-                    List<UUID> mediaIds = sourceMediaList.stream().map(sm -> sm.getMedia().getId()).toList();
-                    Map<UUID, Media> mediaById = sourceMediaList.stream().collect(
-                            Collectors.toMap(sm -> sm.getMedia().getId(), MessageMedia::getMedia, (m1, m2) -> m1)
-                    );
-                    mediaContext = new DiscussionMediaContext(mediaIds, mediaById, mediaDtos);
-                } else {
-                    mediaContext = DiscussionMediaContext.empty();
+                    List<MessageMedia> newMediaList = new ArrayList<>();
+                    for (MessageMedia sm : sourceMediaList) {
+                        MessageMedia mm = MessageMedia.builder()
+                                .id(new MessageMediaId(forwardedMessage.getId(), sm.getMedia().getId()))
+                                .message(forwardedMessage)
+                                .media(sm.getMedia())
+                                .ordinal(sm.getOrdinal())
+                                .build();
+                        newMediaList.add(mm);
+                        mediaDtos.add(toMediaDto(sm.getMedia()));
+                    }
+                    messageMediaRepository.saveAll(newMediaList);
                 }
-                initialCommentCount = discussionService.handleChannelPost(forwardedMessage, mediaContext);
+
+                Long viewCount = targetConv.getType() == ConversationType.CHANNEL ? 0L : null;
+                Integer initialCommentCount = null;
+
+                if (targetConv.getType() == ConversationType.CHANNEL
+                        && targetConv.getLinkedDiscussionGroupId() != null) {
+                    DiscussionMediaContext mediaContext;
+                    if (!sourceMediaList.isEmpty()) {
+                        List<UUID> mediaIds = sourceMediaList.stream().map(sm -> sm.getMedia().getId()).toList();
+                        Map<UUID, Media> mediaById = sourceMediaList.stream().collect(
+                                Collectors.toMap(sm -> sm.getMedia().getId(), MessageMedia::getMedia, (m1, m2) -> m1)
+                        );
+                        mediaContext = new DiscussionMediaContext(mediaIds, mediaById, mediaDtos);
+                    } else {
+                        mediaContext = DiscussionMediaContext.empty();
+                    }
+                    initialCommentCount = discussionService.handleChannelPost(forwardedMessage, mediaContext);
+                }
+
+                ChatMessageResponse response = messageMapper.toResponse(forwardedMessage, mediaDtos, viewCount, initialCommentCount);
+                responses.add(response);
+
+                broadcasts.add(new MessagesForwardedEvent.TargetBroadcastDto(
+                        targetConvId,
+                        targetConv.getType(),
+                        context.memberIds(),
+                        response
+                ));
             }
 
-            ChatMessageResponse response = messageMapper.toResponse(forwardedMessage, mediaDtos, viewCount, initialCommentCount);
-            responses.add(response);
+            // 6. Publish Event for AFTER_COMMIT WebSocket broadcast
+            eventPublisher.publishEvent(new MessagesForwardedEvent(broadcasts));
 
-            broadcasts.add(new MessagesForwardedEvent.TargetBroadcastDto(
-                    targetConvId,
-                    targetConv.getType(),
-                    context.memberIds(),
-                    response
-            ));
+            return responses;
+        } catch (Exception ex) {
+            if (!acquiredSlowModeKeys.isEmpty()) {
+                redisTemplate.delete(acquiredSlowModeKeys);
+            }
+            throw ex;
         }
-
-        // 6. Publish Event for AFTER_COMMIT WebSocket broadcast
-        eventPublisher.publishEvent(new MessagesForwardedEvent(broadcasts));
-
-        return responses;
     }
 
     private void validateSourceAccess(User currentUser, Conversation sourceConv) {
