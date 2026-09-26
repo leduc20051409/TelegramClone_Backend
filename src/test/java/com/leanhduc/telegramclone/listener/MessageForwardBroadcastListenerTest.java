@@ -1,22 +1,24 @@
 package com.leanhduc.telegramclone.listener;
 
 import com.leanhduc.telegramclone.dto.message.ChatMessageResponse;
-import com.leanhduc.telegramclone.event.MessagesForwardedEvent;
 import com.leanhduc.telegramclone.dto.websocket.WsEnvelope;
+import com.leanhduc.telegramclone.event.MessagesForwardedEvent;
 import com.leanhduc.telegramclone.model.enums.ConversationType;
+import com.leanhduc.telegramclone.service.broadcast.ChatBroadcaster;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
 
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
-import static org.mockito.ArgumentMatchers.any;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
@@ -24,65 +26,58 @@ import static org.mockito.Mockito.*;
 class MessageForwardBroadcastListenerTest {
 
     @Mock
-    private SimpMessagingTemplate messagingTemplate;
+    private ChatBroadcaster chatBroadcaster;
 
     @InjectMocks
     private MessageForwardBroadcastListener listener;
 
     @Test
-    @DisplayName("Should broadcast NEW_MESSAGE to individual users for group or small channel")
-    void handleMessagesForwarded_whenGroup_shouldSendToUsers() {
-        UUID conversationId = UUID.randomUUID();
-        UUID user1 = UUID.randomUUID();
-        UUID user2 = UUID.randomUUID();
+    @DisplayName("Should broadcast NEW_MESSAGE to chat broadcaster for each target in forwarded event")
+    void handleMessagesForwarded_shouldDelegateToChatBroadcaster() {
+        UUID conv1 = UUID.randomUUID();
+        UUID conv2 = UUID.randomUUID();
+        UUID senderId = UUID.randomUUID();
 
-        ChatMessageResponse response = new ChatMessageResponse(
-                10L, conversationId, user1, "User1", "Forwarded body",
+        ChatMessageResponse resp1 = new ChatMessageResponse(
+                10L, conv1, senderId, "User1", "Forwarded 1",
+                Instant.now(), List.of(), false, null, null, "TEXT", null
+        );
+        ChatMessageResponse resp2 = new ChatMessageResponse(
+                11L, conv2, senderId, "User1", "Forwarded 2",
                 Instant.now(), List.of(), false, null, null, "TEXT", null
         );
 
-        MessagesForwardedEvent.TargetBroadcastDto broadcast = new MessagesForwardedEvent.TargetBroadcastDto(
-                conversationId,
-                ConversationType.GROUP,
-                List.of(user1, user2),
-                response
+        MessagesForwardedEvent.TargetBroadcastDto b1 = new MessagesForwardedEvent.TargetBroadcastDto(
+                conv1, ConversationType.GROUP, List.of(senderId), resp1
+        );
+        MessagesForwardedEvent.TargetBroadcastDto b2 = new MessagesForwardedEvent.TargetBroadcastDto(
+                conv2, ConversationType.CHANNEL, List.of(), resp2
         );
 
-        MessagesForwardedEvent event = new MessagesForwardedEvent(List.of(broadcast));
+        MessagesForwardedEvent event = new MessagesForwardedEvent(List.of(b1, b2));
 
         listener.handleMessagesForwarded(event);
 
-        verify(messagingTemplate, times(1)).convertAndSendToUser(eq(user1.toString()), eq("/queue/chat"), any(WsEnvelope.class));
-        verify(messagingTemplate, times(1)).convertAndSendToUser(eq(user2.toString()), eq("/queue/chat"), any(WsEnvelope.class));
-        verify(messagingTemplate, never()).convertAndSend(anyString(), any(WsEnvelope.class));
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<WsEnvelope<ChatMessageResponse>> envelopeCaptor = ArgumentCaptor.forClass(WsEnvelope.class);
+
+        verify(chatBroadcaster, times(1)).broadcast(eq(conv1), eq(ConversationType.GROUP), envelopeCaptor.capture());
+        verify(chatBroadcaster, times(1)).broadcast(eq(conv2), eq(ConversationType.CHANNEL), envelopeCaptor.capture());
+
+        List<WsEnvelope<ChatMessageResponse>> captured = envelopeCaptor.getAllValues();
+        assertEquals(2, captured.size());
+        assertEquals("NEW_MESSAGE", captured.get(0).event());
+        assertEquals("Forwarded 1", captured.get(0).data().message());
+        assertEquals("NEW_MESSAGE", captured.get(1).event());
+        assertEquals("Forwarded 2", captured.get(1).data().message());
     }
 
     @Test
-    @DisplayName("Should broadcast to topic for large channel with >1000 members")
-    void handleMessagesForwarded_whenLargeChannel_shouldSendToTopic() {
-        UUID channelId = UUID.randomUUID();
-        List<UUID> memberIds = new java.util.ArrayList<>();
-        for (int i = 0; i < 1005; i++) {
-            memberIds.add(UUID.randomUUID());
-        }
+    @DisplayName("Should do nothing when event or broadcasts is null")
+    void handleMessagesForwarded_whenNull_shouldDoNothing() {
+        listener.handleMessagesForwarded(null);
+        listener.handleMessagesForwarded(new MessagesForwardedEvent(null));
 
-        ChatMessageResponse response = new ChatMessageResponse(
-                20L, channelId, UUID.randomUUID(), "Admin", "Channel announcement",
-                Instant.now(), List.of(), false, null, 0L, "TEXT", null
-        );
-
-        MessagesForwardedEvent.TargetBroadcastDto broadcast = new MessagesForwardedEvent.TargetBroadcastDto(
-                channelId,
-                ConversationType.CHANNEL,
-                memberIds,
-                response
-        );
-
-        MessagesForwardedEvent event = new MessagesForwardedEvent(List.of(broadcast));
-
-        listener.handleMessagesForwarded(event);
-
-        verify(messagingTemplate, times(1)).convertAndSend(eq("/topic/channels/" + channelId), any(WsEnvelope.class));
-        verify(messagingTemplate, never()).convertAndSendToUser(anyString(), anyString(), any(WsEnvelope.class));
+        verifyNoInteractions(chatBroadcaster);
     }
 }

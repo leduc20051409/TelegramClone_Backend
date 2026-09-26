@@ -8,6 +8,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Repository
@@ -15,7 +16,11 @@ public interface ConversationMemberRepository extends JpaRepository<Conversation
 
     List<ConversationMember> findByConversationIdAndLeftAtIsNull(UUID conversationId);
 
+    long countByConversationIdAndLeftAtIsNull(UUID conversationId);
+
     boolean existsByConversationIdAndUserIdAndLeftAtIsNull(UUID conversationId, UUID userId);
+
+    Optional<ConversationMember> findByConversationIdAndUserIdAndLeftAtIsNull(UUID conversationId, UUID userId);
 
     @Query("SELECT DISTINCT m2.user.id FROM ConversationMember m1 " +
            "JOIN ConversationMember m2 ON m1.conversation.id = m2.conversation.id " +

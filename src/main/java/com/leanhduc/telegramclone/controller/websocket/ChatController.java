@@ -1,7 +1,6 @@
 package com.leanhduc.telegramclone.controller.websocket;
 
 import com.leanhduc.telegramclone.dto.message.ChatMessageRequest;
-import com.leanhduc.telegramclone.dto.message.ChatMessageResponse;
 import com.leanhduc.telegramclone.dto.message.ChatReadRequest;
 import com.leanhduc.telegramclone.dto.message.ChatTypingRequest;
 import com.leanhduc.telegramclone.dto.message.ChatTypingResponse;
@@ -32,45 +31,13 @@ public class ChatController {
     @MessageMapping ("/chat.send")
     public void sendMessage(@Payload ChatMessageRequest request, Principal principal) {
         UUID senderId = UUID.fromString(principal.getName());
-        ChatMessageResponse savedMessage = messageService.saveMessage(senderId, request);
-        WsEnvelope<ChatMessageResponse> envelope = WsEnvelope.of("NEW_MESSAGE", savedMessage);
-        
-        UUID conversationId = request.conversationId();
-        ConversationType type = conversationService.getConversationType(conversationId);
-        List<UUID> memberIds = conversationService.getConversationMemberIds(conversationId);
-        
-        if (type == ConversationType.CHANNEL && memberIds.size() > 1000) {
-            messagingTemplate.convertAndSend(
-                    "/topic/channels/" + conversationId,
-                    envelope
-            );
-            return;
-        }
-        
-        for (UUID memberId : memberIds) {
-            messagingTemplate.convertAndSendToUser(
-                    memberId.toString(),
-                    "/queue/chat",
-                    envelope
-            );
-        }
+        messageService.saveMessage(senderId, request);
     }
 
     @MessageMapping ("/chat.read")
     public void markAsRead(@Payload ChatReadRequest request, Principal principal) {
         UUID readerId = UUID.fromString(principal.getName());
         messageService.markMessagesAsRead(readerId, request);
-        WsEnvelope<ChatReadRequest> envelope = WsEnvelope.of("MESSAGES_READ", request);
-        List<UUID> memberIds = conversationService.getConversationMemberIds(request.conversationId());
-        for (UUID memberId : memberIds) {
-            if (!memberId.equals(readerId)) {
-                messagingTemplate.convertAndSendToUser(
-                        memberId.toString(),
-                        "/queue/chat",
-                        envelope
-                );
-            }
-        }
     }
 
     @MessageMapping ("/chat.typing")

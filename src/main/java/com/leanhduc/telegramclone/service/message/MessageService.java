@@ -8,9 +8,11 @@ import com.leanhduc.telegramclone.dto.message.DiscussionMediaContext;
 import com.leanhduc.telegramclone.dto.message.DiscussionThreadResponse;
 import com.leanhduc.telegramclone.dto.message.EditMessageRequest;
 import com.leanhduc.telegramclone.dto.message.ForwardMessageRequest;
+import com.leanhduc.telegramclone.event.MessageCreatedEvent;
 import com.leanhduc.telegramclone.event.MessageDeletedEvent;
 import com.leanhduc.telegramclone.event.MessageEditedEvent;
 import com.leanhduc.telegramclone.event.MessagesForwardedEvent;
+import com.leanhduc.telegramclone.event.MessagesReadEvent;
 import com.leanhduc.telegramclone.dto.message.PinMessageResult;
 import com.leanhduc.telegramclone.exception.BusinessException;
 import com.leanhduc.telegramclone.exception.ErrorCode;
@@ -190,7 +192,11 @@ public class MessageService implements IMessageService {
                 discussionService.handleCommentCreated(message);
             }
 
-            return messageMapper.toResponse(message, mediaDtos, viewCount, initialCommentCount);
+            ChatMessageResponse response = messageMapper.toResponse(message, mediaDtos, viewCount, initialCommentCount);
+
+            eventPublisher.publishEvent(new MessageCreatedEvent(response, conversation.getType()));
+
+            return response;
         } catch (Exception ex) {
             if (slowModeRedisKey != null) {
                 redisTemplate.delete(slowModeRedisKey);
@@ -218,22 +224,30 @@ public class MessageService implements IMessageService {
     }
 
     @Override
+    @Transactional
     public void markMessagesAsRead(UUID currentUserId, ChatReadRequest request) {
         if (!memberRepository.existsByConversationIdAndUserIdAndLeftAtIsNull(request.conversationId(), currentUserId)) {
             throw new BusinessException(ErrorCode.NOT_IN_CONVERSATION);
         }
-        Conversation conversationRef = conversationRepository.getReferenceById(request.conversationId());
+        Conversation conversation = conversationRepository.findById(request.conversationId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.CONVERSATION_NOT_FOUND));
         User userRef = userRepository.getReferenceById(currentUserId);
         UnreadCounterId counterId = new UnreadCounterId(request.conversationId(), currentUserId);
         UnreadCounter counter = unreadCounterRepository.findById(counterId)
                 .orElse(UnreadCounter.builder()
                         .id(counterId)
-                        .conversation(conversationRef)
+                        .conversation(conversation)
                         .user(userRef)
                         .build());
         if (counter.getLastReadMessageId() == null || counter.getLastReadMessageId() < request.lastReadMessageId()) {
             counter.setLastReadMessageId(request.lastReadMessageId());
             unreadCounterRepository.save(counter);
+            eventPublisher.publishEvent(new MessagesReadEvent(
+                    request.conversationId(),
+                    conversation.getType(),
+                    currentUserId,
+                    request.lastReadMessageId()
+            ));
         }
     }
 
