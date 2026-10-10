@@ -1,6 +1,7 @@
 package com.leanhduc.telegramclone.service.media;
 
 import com.cloudinary.Cloudinary;
+import com.leanhduc.telegramclone.aop.LogExecutionTime;
 import com.cloudinary.utils.ObjectUtils;
 import com.leanhduc.telegramclone.dto.media.UploadResponseDto;
 import com.leanhduc.telegramclone.exception.BusinessException;
@@ -40,6 +41,7 @@ public class MediaService implements IMediaService {
             "pdf", "doc", "docx");
 
     @Override
+    @LogExecutionTime(thresholdMs = 1000, description = "Cloudinary file upload")
     public UploadResponseDto uploadFile(UUID userId, MultipartFile file) {
         if (file == null || file.isEmpty()) {
             throw new BusinessException(ErrorCode.INVALID_FILE);

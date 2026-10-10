@@ -1,5 +1,6 @@
 package com.leanhduc.telegramclone.service.message;
 
+import com.leanhduc.telegramclone.aop.LogExecutionTime;
 import com.leanhduc.telegramclone.dto.media.MediaAttachmentDto;
 import com.leanhduc.telegramclone.dto.message.ChatMessageRequest;
 import com.leanhduc.telegramclone.dto.message.ChatMessageResponse;
@@ -216,6 +217,7 @@ public class MessageService implements IMessageService {
 
 
     @Override
+    @LogExecutionTime(thresholdMs = 150, description = "Fetch chat message history")
     @Transactional(readOnly = true)
     public List<ChatMessageResponse> getMessageHistory(UUID conversationId, UUID currentUserId, Long cursor, int size) {
         boolean isMember = memberRepository.existsByConversationIdAndUserIdAndLeftAtIsNull(conversationId, currentUserId);
@@ -233,6 +235,7 @@ public class MessageService implements IMessageService {
     }
 
     @Override
+    @LogExecutionTime(thresholdMs = 150, description = "Catch-up sync messages")
     @Transactional(readOnly = true)
     public SyncMessagesResponse syncMessages(UUID conversationId, UUID currentUserId, Long afterId, int limit) {
         boolean isMember = memberRepository.existsByConversationIdAndUserIdAndLeftAtIsNull(conversationId, currentUserId);
