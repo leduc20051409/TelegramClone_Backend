@@ -47,6 +47,9 @@ public class Message {
     @Column(name = "updated_at")
     private Instant updatedAt;
 
+    @Column(name = "client_message_id", length = 64)
+    private String clientMessageId;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "reply_to_message_id")
     private Message replyTo;

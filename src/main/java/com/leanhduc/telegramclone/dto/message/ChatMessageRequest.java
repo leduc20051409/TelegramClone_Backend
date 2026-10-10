@@ -7,9 +7,14 @@ public record ChatMessageRequest(
         UUID conversationId,
         String message,
         List<UUID> mediaIds,
-        Long replyToMessageId
+        Long replyToMessageId,
+        String clientMessageId
 ) {
     public ChatMessageRequest(UUID conversationId, String message, List<UUID> mediaIds) {
-        this(conversationId, message, mediaIds, null);
+        this(conversationId, message, mediaIds, null, null);
+    }
+
+    public ChatMessageRequest(UUID conversationId, String message, List<UUID> mediaIds, Long replyToMessageId) {
+        this(conversationId, message, mediaIds, replyToMessageId, null);
     }
 }

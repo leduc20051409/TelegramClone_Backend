@@ -107,7 +107,8 @@ public interface MessageMapper {
                 base.replyTo(),
                 base.reactions(),
                 commentCount,
-                base.forwardedFrom()
+                base.forwardedFrom(),
+                base.clientMessageId()
         );
     }
 }

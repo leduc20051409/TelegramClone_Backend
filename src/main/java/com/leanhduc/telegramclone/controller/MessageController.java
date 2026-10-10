@@ -3,6 +3,7 @@ package com.leanhduc.telegramclone.controller;
 import com.leanhduc.telegramclone.dto.message.ChatMessageResponse;
 import com.leanhduc.telegramclone.dto.message.DiscussionThreadResponse;
 import com.leanhduc.telegramclone.dto.message.EditMessageRequest;
+import com.leanhduc.telegramclone.dto.message.SyncMessagesResponse;
 import com.leanhduc.telegramclone.service.message.IMessageService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -19,6 +20,18 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class MessageController {
     private final IMessageService messageService;
+
+    @GetMapping("/{conversationId}/sync")
+    public ResponseEntity<SyncMessagesResponse> syncMessages(
+            @PathVariable UUID conversationId,
+            @RequestParam(defaultValue = "0") Long afterId,
+            @RequestParam(defaultValue = "100") int limit,
+            Principal principal
+    ) {
+        UUID currentUserId = UUID.fromString(principal.getName());
+        SyncMessagesResponse response = messageService.syncMessages(conversationId, currentUserId, afterId, limit);
+        return ResponseEntity.ok(response);
+    }
 
     @GetMapping("/{conversationId}")
     public ResponseEntity<List<ChatMessageResponse>> getChatHistory(

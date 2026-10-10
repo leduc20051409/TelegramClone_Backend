@@ -19,12 +19,22 @@ public interface MessageRepository extends JpaRepository<Message, Long> {
 
         Optional<Message> findByIdAndConversationId(Long id, UUID conversationId);
 
+        Optional<Message> findBySenderIdAndClientMessageId(UUID senderId, String clientMessageId);
+
         @Query("SELECT m FROM Message m WHERE m.conversation.id = :conversationId " +
                         "AND m.deleted = false AND m.id < :lastMessageId " +
                         "ORDER BY m.id DESC")
         List<Message> findMessagesBeforeId(
                         @Param("conversationId") UUID conversationId,
                         @Param("lastMessageId") Long lastMessageId,
+                        Pageable pageable);
+
+        @Query("SELECT m FROM Message m WHERE m.conversation.id = :conversationId " +
+                        "AND m.deleted = false AND m.id > :afterId " +
+                        "ORDER BY m.id ASC")
+        List<Message> findMessagesAfterId(
+                        @Param("conversationId") UUID conversationId,
+                        @Param("afterId") Long afterId,
                         Pageable pageable);
 
         @Query("SELECT COUNT(m) FROM Message m WHERE m.conversation.id = :conversationId " +

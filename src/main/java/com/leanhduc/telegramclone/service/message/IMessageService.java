@@ -1,16 +1,9 @@
 package com.leanhduc.telegramclone.service.message;
 
-import com.leanhduc.telegramclone.dto.message.ChatMessageRequest;
-import com.leanhduc.telegramclone.dto.message.ChatMessageResponse;
-import com.leanhduc.telegramclone.dto.message.ChatReadRequest;
-
-import com.leanhduc.telegramclone.dto.message.DiscussionThreadResponse;
-import com.leanhduc.telegramclone.dto.message.EditMessageRequest;
+import com.leanhduc.telegramclone.dto.message.*;
 
 import java.util.List;
 import java.util.UUID;
-
-import com.leanhduc.telegramclone.dto.message.PinMessageResult;
 
 public interface IMessageService {
     ChatMessageResponse saveMessage(UUID senderId, ChatMessageRequest request);
@@ -33,5 +26,7 @@ public interface IMessageService {
 
     DiscussionThreadResponse getDiscussionThread(UUID currentUserId, Long channelPostId, Long cursor, int size);
 
-    List<ChatMessageResponse> forwardMessage(UUID currentUserId, Long messageId, com.leanhduc.telegramclone.dto.message.ForwardMessageRequest request);
+    List<ChatMessageResponse> forwardMessage(UUID currentUserId, Long messageId, ForwardMessageRequest request);
+
+    SyncMessagesResponse syncMessages(UUID conversationId, UUID currentUserId, Long afterId, int limit);
 }

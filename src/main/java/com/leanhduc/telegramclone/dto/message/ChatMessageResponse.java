@@ -21,23 +21,31 @@ public record ChatMessageResponse(
         ReplyToDto replyTo,
         List<MessageReactionDto> reactions,
         Integer commentCount,
-        ForwardedFromDto forwardedFrom
+        ForwardedFromDto forwardedFrom,
+        String clientMessageId
 ) {
     public ChatMessageResponse(Long id, UUID conversationId, UUID senderId, String senderName, String message, Instant createdAt,
                                List<MediaAttachmentDto> media, boolean edited, Instant updatedAt,
                                Long viewCount, String messageType, ReplyToDto replyTo) {
-        this(id, conversationId, senderId, senderName, message, createdAt, media, edited, updatedAt, viewCount, messageType, replyTo, List.of(), null, null);
+        this(id, conversationId, senderId, senderName, message, createdAt, media, edited, updatedAt, viewCount, messageType, replyTo, List.of(), null, null, null);
     }
 
     public ChatMessageResponse(Long id, UUID conversationId, UUID senderId, String senderName, String message, Instant createdAt,
                                List<MediaAttachmentDto> media, boolean edited, Instant updatedAt,
                                Long viewCount, String messageType, ReplyToDto replyTo, List<MessageReactionDto> reactions) {
-        this(id, conversationId, senderId, senderName, message, createdAt, media, edited, updatedAt, viewCount, messageType, replyTo, reactions, null, null);
+        this(id, conversationId, senderId, senderName, message, createdAt, media, edited, updatedAt, viewCount, messageType, replyTo, reactions, null, null, null);
     }
 
     public ChatMessageResponse(Long id, UUID conversationId, UUID senderId, String senderName, String message, Instant createdAt,
                                List<MediaAttachmentDto> media, boolean edited, Instant updatedAt,
                                Long viewCount, String messageType, ReplyToDto replyTo, List<MessageReactionDto> reactions, Integer commentCount) {
-        this(id, conversationId, senderId, senderName, message, createdAt, media, edited, updatedAt, viewCount, messageType, replyTo, reactions, commentCount, null);
+        this(id, conversationId, senderId, senderName, message, createdAt, media, edited, updatedAt, viewCount, messageType, replyTo, reactions, commentCount, null, null);
+    }
+
+    public ChatMessageResponse(Long id, UUID conversationId, UUID senderId, String senderName, String message, Instant createdAt,
+                               List<MediaAttachmentDto> media, boolean edited, Instant updatedAt,
+                               Long viewCount, String messageType, ReplyToDto replyTo, List<MessageReactionDto> reactions,
+                               Integer commentCount, ForwardedFromDto forwardedFrom) {
+        this(id, conversationId, senderId, senderName, message, createdAt, media, edited, updatedAt, viewCount, messageType, replyTo, reactions, commentCount, forwardedFrom, null);
     }
 }

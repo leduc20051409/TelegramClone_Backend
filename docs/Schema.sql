@@ -109,13 +109,15 @@ create table messages (
   message_type text not null default 'text',  
   body text,  
   body_json jsonb,  
-  metadata jsonb  
+  metadata jsonb,
+  client_message_id varchar(64)
 );  
   
 -- essential indexes for keyset pagination and common access patterns  
 create index idx_messages_conv_id on messages (conversation_id, id desc);  
 create index idx_messages_conv_created_at on messages (conversation_id, created_at desc);  
 create index idx_messages_conv_not_deleted on messages (conversation_id, id desc) where deleted = false;  
+create unique index uq_messages_sender_client_msg on messages (sender_id, client_message_id) where client_message_id is not null;
   
 alter table messages  
   add constraint messages_conv_fkey foreign key (conversation_id) references conversations (id),  

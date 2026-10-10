@@ -8,6 +8,7 @@ import com.leanhduc.telegramclone.dto.message.DiscussionMediaContext;
 import com.leanhduc.telegramclone.dto.message.DiscussionThreadResponse;
 import com.leanhduc.telegramclone.dto.message.EditMessageRequest;
 import com.leanhduc.telegramclone.dto.message.ForwardMessageRequest;
+import com.leanhduc.telegramclone.dto.message.SyncMessagesResponse;
 import com.leanhduc.telegramclone.event.MessageCreatedEvent;
 import com.leanhduc.telegramclone.event.MessageDeletedEvent;
 import com.leanhduc.telegramclone.event.MessageEditedEvent;
@@ -115,6 +116,13 @@ public class MessageService implements IMessageService {
             }
         }
 
+        if (request.clientMessageId() != null && !request.clientMessageId().isBlank()) {
+            Optional<Message> existing = messageRepository.findBySenderIdAndClientMessageId(senderId, request.clientMessageId());
+            if (existing.isPresent()) {
+                return toExistingMessageResponse(existing.get(), conversation.getType());
+            }
+        }
+
         try {
             User sender = userRepository.findById(senderId)
                     .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
@@ -151,6 +159,7 @@ public class MessageService implements IMessageService {
                     .messageType(messageType)
                     .deleted(false)
                     .replyTo(replyTo)
+                    .clientMessageId(request.clientMessageId() != null && !request.clientMessageId().isBlank() ? request.clientMessageId() : null)
                     .build();
 
             message = messageRepository.save(message);
@@ -221,6 +230,30 @@ public class MessageService implements IMessageService {
             messages = messageRepository.findMessagesBeforeId(conversationId, cursor, pageable);
         }
         return toResponsesWithMedia(messages);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public SyncMessagesResponse syncMessages(UUID conversationId, UUID currentUserId, Long afterId, int limit) {
+        boolean isMember = memberRepository.existsByConversationIdAndUserIdAndLeftAtIsNull(conversationId, currentUserId);
+        if (!isMember) {
+            throw new BusinessException(ErrorCode.NOT_IN_CONVERSATION);
+        }
+
+        int safeLimit = Math.min(Math.max(limit, 1), 100);
+        long safeAfterId = (afterId == null || afterId < 0) ? 0L : afterId;
+
+        // Fetch safeLimit + 1 to check if there are more messages available
+        Pageable pageable = PageRequest.of(0, safeLimit + 1);
+        List<Message> messages = messageRepository.findMessagesAfterId(conversationId, safeAfterId, pageable);
+
+        boolean hasMore = messages.size() > safeLimit;
+        List<Message> resultMessages = hasMore ? messages.subList(0, safeLimit) : messages;
+
+        Long nextAfterId = resultMessages.isEmpty() ? safeAfterId : resultMessages.get(resultMessages.size() - 1).getId();
+        List<ChatMessageResponse> responses = toResponsesWithMedia(resultMessages);
+
+        return new SyncMessagesResponse(responses, hasMore, nextAfterId);
     }
 
     @Override
@@ -319,6 +352,28 @@ public class MessageService implements IMessageService {
                 media.getFileName(),
                 media.getFileSize() == null ? 0L : media.getFileSize()
         );
+    }
+
+    private ChatMessageResponse toExistingMessageResponse(Message message, ConversationType convType) {
+        List<MessageMedia> messageMediaList = messageMediaRepository.findByMessageIdInWithMedia(List.of(message.getId()));
+        List<MediaAttachmentDto> mediaDtos = messageMediaList.stream()
+                .map(MessageMedia::getMedia)
+                .map(this::toMediaDto)
+                .toList();
+
+        Long viewCount = null;
+        Integer commentCount = null;
+        if (convType == ConversationType.CHANNEL) {
+            viewCount = messagePostViewRepository.findById(message.getId())
+                    .map(MessagePostView::getViewCount)
+                    .orElse(0L);
+            commentCount = discussionThreadLinkRepository.findByChannelPostMessageIdIn(List.of(message.getId()))
+                    .stream()
+                    .findFirst()
+                    .map(DiscussionThreadLink::getCommentCount)
+                    .orElse(0);
+        }
+        return messageMapper.toResponse(message, mediaDtos, viewCount, commentCount);
     }
 
     @Override
