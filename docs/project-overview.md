@@ -53,7 +53,7 @@ com.leanhduc.telegramclone
 │   ├── MessagesReadEvent.java                # Fired after read receipt is persisted (conversationId, type, readerId, lastReadMessageId)
 │   └── UserPresenceChangedEvent.java         # Fired on online/offline state change
 │
-├── exception/              # Global Exception Handling (@ControllerAdvice, BusinessException, ErrorCode)
+├── exception/              # Domain & Business Exceptions (BusinessException, ErrorCode)
 │
 ├── listener/               # Transactional Event Listeners (@TransactionalEventListener AFTER_COMMIT)
 │   ├── DiscussionBroadcastListener.java      # Broadcasts channel discussion mirroring & comment count updates
@@ -125,7 +125,10 @@ com.leanhduc.telegramclone
 │   ├── typing/             # Real-time typing status tracking (TypingService)
 │   └── user/               # Profile & user search logic (UserService)
 │
-└── utils/                  # Helper utilities (JwtUtils, etc.)
+├── utils/                  # Helper utilities (JwtUtils, etc.)
+│
+└── web/                    # Web Layer & HTTP Boundary
+    └── advice/             # Global REST Response & Exception Advice (GlobalResponseHandler, GlobalExceptionHandler)
 ```
 
 ---

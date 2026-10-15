@@ -1,5 +1,7 @@
-package com.leanhduc.telegramclone.exception;
+package com.leanhduc.telegramclone.web.advice;
 
+import com.leanhduc.telegramclone.exception.BusinessException;
+import com.leanhduc.telegramclone.exception.ErrorCode;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -80,7 +82,6 @@ public class GlobalExceptionHandler {
         log.warn("Max upload size exceeded: {}", ex.getMessage());
         return buildErrorResponse(HttpStatus.PAYLOAD_TOO_LARGE, ErrorCode.FILE_SIZE_EXCEEDED.name(), ErrorCode.FILE_SIZE_EXCEEDED.getMessage());
     }
-
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, Object>> handleGenericException(Exception ex) {

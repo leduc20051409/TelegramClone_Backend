@@ -66,6 +66,7 @@ public class MessageService implements IMessageService {
     private final ApplicationEventPublisher eventPublisher;
 
     @Override
+    @LogExecutionTime(thresholdMs = 100, description = "Save chat message")
     @Transactional
     public ChatMessageResponse saveMessage(UUID senderId, ChatMessageRequest request) {
         Conversation conversation = conversationRepository.findById(request.conversationId())
