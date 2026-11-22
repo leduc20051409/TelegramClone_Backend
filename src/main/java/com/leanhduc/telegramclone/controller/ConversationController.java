@@ -17,12 +17,7 @@ import com.leanhduc.telegramclone.service.conversation.IConversationService;
 import com.leanhduc.telegramclone.service.message.IMessageService;
 import com.leanhduc.telegramclone.dto.message.ChannelViewsRequest;
 import com.leanhduc.telegramclone.dto.message.ChatMessageResponse;
-import com.leanhduc.telegramclone.dto.websocket.WsEnvelope;
-import com.leanhduc.telegramclone.dto.websocket.UnpinMessageResponse;
-import com.leanhduc.telegramclone.dto.message.PinMessageResult;
-import com.leanhduc.telegramclone.model.enums.ConversationType;
 import jakarta.validation.Valid;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -38,7 +33,6 @@ public class ConversationController {
 
     private final IConversationService conversationService;
     private final IMessageService messageService;
-    private final SimpMessagingTemplate messagingTemplate;
 
     @PostMapping("/private/{targetUserId}")
     public ResponseEntity<ConversationResponse> getOrCreatePrivateChat(
@@ -108,27 +102,6 @@ public class ConversationController {
     ) {
         UUID requesterId = UUID.fromString(principal.getName());
         ConversationResponse response = conversationService.updateConversation(requesterId, conversationId, request);
-
-        // Broadcast the update to all members of the conversation in real-time
-        WsEnvelope<ConversationResponse> envelope = WsEnvelope.of("CONVERSATION_UPDATED", response);
-        ConversationType type = conversationService.getConversationType(conversationId);
-        List<UUID> memberIds = conversationService.getConversationMemberIds(conversationId);
-
-        if (type == ConversationType.CHANNEL && memberIds.size() > 1000) {
-            messagingTemplate.convertAndSend(
-                    "/topic/channels/" + conversationId,
-                    envelope
-            );
-        } else {
-            for (UUID memberId : memberIds) {
-                messagingTemplate.convertAndSendToUser(
-                        memberId.toString(),
-                        "/queue/chat",
-                        envelope
-                );
-            }
-        }
-
         return ResponseEntity.ok(response);
     }
 
@@ -194,40 +167,7 @@ public class ConversationController {
             Principal principal
     ) {
         UUID userId = UUID.fromString(principal.getName());
-        PinMessageResult result = messageService.pinMessage(userId, conversationId, messageId);
-        ChatMessageResponse pinnedResponse = result.pinnedMessage();
-        ChatMessageResponse systemResponse = result.systemMessage();
-
-        ConversationType type = conversationService.getConversationType(conversationId);
-        List<UUID> memberIds = conversationService.getConversationMemberIds(conversationId);
-
-        // 1. Broadcast the Pinned Message update (MESSAGE_PINNED)
-        WsEnvelope<ChatMessageResponse> pinEnvelope = WsEnvelope.of("MESSAGE_PINNED", pinnedResponse);
-        for (UUID memberId : memberIds) {
-            messagingTemplate.convertAndSendToUser(
-                    memberId.toString(),
-                    "/queue/chat",
-                    pinEnvelope
-            );
-        }
-
-        // 2. Broadcast the SYSTEM notification message (NEW_MESSAGE)
-        WsEnvelope<ChatMessageResponse> sysEnvelope = WsEnvelope.of("NEW_MESSAGE", systemResponse);
-        if (type == ConversationType.CHANNEL && memberIds.size() > 1000) {
-            messagingTemplate.convertAndSend(
-                    "/topic/channels/" + conversationId,
-                    sysEnvelope
-            );
-        } else {
-            for (UUID memberId : memberIds) {
-                messagingTemplate.convertAndSendToUser(
-                        memberId.toString(),
-                        "/queue/chat",
-                        sysEnvelope
-                );
-            }
-        }
-
+        ChatMessageResponse pinnedResponse = messageService.pinMessage(userId, conversationId, messageId).pinnedMessage();
         return ResponseEntity.ok(pinnedResponse);
     }
 
@@ -239,19 +179,6 @@ public class ConversationController {
     ) {
         UUID userId = UUID.fromString(principal.getName());
         messageService.unpinMessage(userId, conversationId, messageId);
-
-        // Broadcast to WebSocket members
-        UnpinMessageResponse payload = new UnpinMessageResponse(messageId, conversationId);
-        WsEnvelope<UnpinMessageResponse> envelope = WsEnvelope.of("MESSAGE_UNPINNED", payload);
-        List<UUID> memberIds = conversationService.getConversationMemberIds(conversationId);
-        for (UUID memberId : memberIds) {
-            messagingTemplate.convertAndSendToUser(
-                    memberId.toString(),
-                    "/queue/chat",
-                    envelope
-            );
-        }
-
         return ResponseEntity.noContent().build();
     }
 

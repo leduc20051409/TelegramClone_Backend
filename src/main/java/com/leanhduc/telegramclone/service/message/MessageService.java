@@ -13,6 +13,8 @@ import com.leanhduc.telegramclone.dto.message.SyncMessagesResponse;
 import com.leanhduc.telegramclone.event.MessageCreatedEvent;
 import com.leanhduc.telegramclone.event.MessageDeletedEvent;
 import com.leanhduc.telegramclone.event.MessageEditedEvent;
+import com.leanhduc.telegramclone.event.MessagePinnedEvent;
+import com.leanhduc.telegramclone.event.MessageUnpinnedEvent;
 import com.leanhduc.telegramclone.event.MessagesForwardedEvent;
 import com.leanhduc.telegramclone.event.MessagesReadEvent;
 import com.leanhduc.telegramclone.dto.message.PinMessageResult;
@@ -456,15 +458,9 @@ public class MessageService implements IMessageService {
 
         ChatMessageResponse response = messageMapper.toResponse(message, mediaDtos, viewCount);
 
-        List<UUID> memberIds = memberRepository.findByConversationIdAndLeftAtIsNull(message.getConversation().getId())
-                .stream()
-                .map(member -> member.getUser().getId())
-                .toList();
-
         eventPublisher.publishEvent(new MessageEditedEvent(
                 response,
-                message.getConversation().getType(),
-                memberIds
+                message.getConversation().getType()
         ));
 
         return response;
@@ -493,16 +489,11 @@ public class MessageService implements IMessageService {
 
         UUID conversationId = message.getConversation().getId();
         ConversationType conversationType = message.getConversation().getType();
-        List<UUID> memberIds = memberRepository.findByConversationIdAndLeftAtIsNull(conversationId)
-                .stream()
-                .map(member -> member.getUser().getId())
-                .toList();
 
         eventPublisher.publishEvent(new MessageDeletedEvent(
                 messageId,
                 conversationId,
-                conversationType,
-                memberIds
+                conversationType
         ));
 
         return conversationId;
@@ -616,6 +607,13 @@ public class MessageService implements IMessageService {
         Message savedSystemMsg = messageRepository.save(systemMessage);
         ChatMessageResponse systemMessageResponse = toResponsesWithMedia(List.of(savedSystemMsg)).get(0);
 
+        eventPublisher.publishEvent(new MessagePinnedEvent(
+                conversationId,
+                conversation.getType(),
+                pinnedMessageResponse,
+                systemMessageResponse
+        ));
+
         return new PinMessageResult(pinnedMessageResponse, systemMessageResponse);
     }
 
@@ -648,6 +646,12 @@ public class MessageService implements IMessageService {
         }
 
         pinnedMessageRepository.deleteById(pinnedId);
+
+        eventPublisher.publishEvent(new MessageUnpinnedEvent(
+                conversationId,
+                conversation.getType(),
+                messageId
+        ));
     }
 
     @Override
@@ -852,11 +856,7 @@ public class MessageService implements IMessageService {
                     }
                 }
 
-                List<UUID> memberIds = memberRepository.findByConversationIdAndLeftAtIsNull(targetConvId).stream()
-                        .map(m -> m.getUser().getId())
-                        .toList();
-
-                targetContexts.put(targetConvId, new TargetValidationContext(targetConv, member, memberIds));
+                targetContexts.put(targetConvId, new TargetValidationContext(targetConv, member));
             }
 
             // 4. Retrieve source media attachments if any
@@ -924,7 +924,6 @@ public class MessageService implements IMessageService {
                 broadcasts.add(new MessagesForwardedEvent.TargetBroadcastDto(
                         targetConvId,
                         targetConv.getType(),
-                        context.memberIds(),
                         response
                 ));
             }
@@ -955,7 +954,6 @@ public class MessageService implements IMessageService {
 
     private record TargetValidationContext(
             Conversation conversation,
-            ConversationMember member,
-            List<UUID> memberIds
+            ConversationMember member
     ) {}
 }

@@ -16,6 +16,10 @@ public interface ConversationMemberRepository extends JpaRepository<Conversation
 
     List<ConversationMember> findByConversationIdAndLeftAtIsNull(UUID conversationId);
 
+    @Query("SELECT cm.id.userId FROM ConversationMember cm " +
+           "WHERE cm.id.conversationId = :conversationId AND cm.leftAt IS NULL")
+    List<UUID> findActiveUserIdsByConversationId(@Param("conversationId") UUID conversationId);
+
     long countByConversationIdAndLeftAtIsNull(UUID conversationId);
 
     boolean existsByConversationIdAndUserIdAndLeftAtIsNull(UUID conversationId, UUID userId);

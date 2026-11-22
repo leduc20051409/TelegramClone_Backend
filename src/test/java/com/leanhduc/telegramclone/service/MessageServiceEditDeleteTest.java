@@ -122,8 +122,6 @@ class MessageServiceEditDeleteTest {
                 Instant.now(), List.of(), true, null, null, "TEXT", null
         );
         when(messageMapper.toResponse(any(Message.class), eq(List.of()), isNull())).thenReturn(expectedResponse);
-        when(memberRepository.findByConversationIdAndLeftAtIsNull(conversation.getId()))
-                .thenReturn(List.of(member1, member2));
 
         ChatMessageResponse actualResponse = messageService.editMessage(currentUserId, messageId, request);
 
@@ -136,22 +134,13 @@ class MessageServiceEditDeleteTest {
         MessageEditedEvent publishedEvent = eventCaptor.getValue();
         assertEquals(expectedResponse, publishedEvent.updatedMessage());
         assertEquals(ConversationType.GROUP, publishedEvent.conversationType());
-        assertEquals(List.of(currentUserId, otherUserId), publishedEvent.memberIds());
     }
 
     @Test
     @DisplayName("Should soft delete message, save, and publish MessageDeletedEvent")
     void deleteMessage_shouldPublishMessageDeletedEvent() {
-        UUID otherUserId = UUID.randomUUID();
-        User otherUser = User.builder().id(otherUserId).username("receiver").build();
-
-        ConversationMember member1 = ConversationMember.builder().user(currentUser).conversation(conversation).build();
-        ConversationMember member2 = ConversationMember.builder().user(otherUser).conversation(conversation).build();
-
         when(messageRepository.findById(messageId)).thenReturn(Optional.of(message));
         when(messageRepository.save(any(Message.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        when(memberRepository.findByConversationIdAndLeftAtIsNull(conversation.getId()))
-                .thenReturn(List.of(member1, member2));
 
         UUID deletedConvId = messageService.deleteMessage(currentUserId, messageId);
 
@@ -165,7 +154,6 @@ class MessageServiceEditDeleteTest {
         assertEquals(messageId, publishedEvent.messageId());
         assertEquals(conversation.getId(), publishedEvent.conversationId());
         assertEquals(ConversationType.GROUP, publishedEvent.conversationType());
-        assertEquals(List.of(currentUserId, otherUserId), publishedEvent.memberIds());
     }
 
     @Test

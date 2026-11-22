@@ -18,10 +18,11 @@ import com.leanhduc.telegramclone.dto.invite.CreateInviteLinkRequest;
 import com.leanhduc.telegramclone.service.Presence.IPresenceService;
 import com.leanhduc.telegramclone.service.invite.IConversationInviteLinkService;
 import com.leanhduc.telegramclone.dto.websocket.MemberEventResponse;
-import com.leanhduc.telegramclone.dto.websocket.WsEnvelope;
+import com.leanhduc.telegramclone.event.ConversationMemberChangedEvent;
+import com.leanhduc.telegramclone.event.ConversationUpdatedEvent;
 import com.leanhduc.telegramclone.model.enums.MessageType;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.redis.core.RedisTemplate;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -48,7 +49,7 @@ public class ConversationService implements IConversationService {
     private final MessagePostViewRepository messagePostViewRepository;
     private final IPresenceService presenceService;
     private final IConversationInviteLinkService inviteLinkService;
-    private final SimpMessagingTemplate messagingTemplate;
+    private final ApplicationEventPublisher eventPublisher;
     private final IPermissionService permissionService;
     private final RedisTemplate<String, String> redisTemplate;
 
@@ -204,7 +205,7 @@ public class ConversationService implements IConversationService {
         User user = member.getUser();
         String displayName = user.getDisplayName() != null && !user.getDisplayName().isBlank()
                 ? user.getDisplayName() : user.getUsername();
-        broadcastMemberEventAndSystemMessage(conversation, user, "MEMBER_LEFT", displayName + " left the group");
+        publishMemberChangedEvent(conversation, user, "MEMBER_LEFT", displayName + " left the group", userId);
     }
 
     @Override
@@ -264,7 +265,7 @@ public class ConversationService implements IConversationService {
                 ? targetName + " joined the group"
                 : requesterName + " added " + targetName + " to the group";
 
-        broadcastMemberEventAndSystemMessage(conversation, targetUser, "MEMBER_JOINED", systemText);
+        publishMemberChangedEvent(conversation, targetUser, "MEMBER_JOINED", systemText, null);
 
         return mapToConversationResponse(conversation, requesterId);
     }
@@ -338,6 +339,13 @@ public class ConversationService implements IConversationService {
 
         conversation = conversationRepository.save(conversation);
 
+        ConversationResponse broadcastResponse = mapToConversationResponse(conversation, null);
+        eventPublisher.publishEvent(new ConversationUpdatedEvent(
+                conversation.getId(),
+                conversation.getType(),
+                broadcastResponse
+        ));
+
         return mapToConversationResponse(conversation, requesterId);
     }
 
@@ -382,7 +390,7 @@ public class ConversationService implements IConversationService {
         String requesterName = requester.getDisplayName() != null && !requester.getDisplayName().isBlank()
                 ? requester.getDisplayName() : requester.getUsername();
 
-        broadcastMemberEventAndSystemMessage(conversation, targetUser, "MEMBER_LEFT", requesterName + " removed " + targetName + " from the group");
+        publishMemberChangedEvent(conversation, targetUser, "MEMBER_LEFT", requesterName + " removed " + targetName + " from the group", targetUserId);
     }
 
     @Override
@@ -436,8 +444,11 @@ public class ConversationService implements IConversationService {
         }
 
         ConversationResponse updatedResponse = mapToConversationResponse(conversation, null);
-        WsEnvelope<ConversationResponse> envelope = WsEnvelope.of("CONVERSATION_UPDATED", updatedResponse);
-        broadcastEnvelopeToMembers(conversation, envelope, null);
+        eventPublisher.publishEvent(new ConversationUpdatedEvent(
+                conversation.getId(),
+                conversation.getType(),
+                updatedResponse
+        ));
     }
 
     @Override
@@ -580,8 +591,11 @@ public class ConversationService implements IConversationService {
         memberRepository.save(targetMember);
 
         ConversationResponse updatedResponse = mapToConversationResponse(conversation, null);
-        WsEnvelope<ConversationResponse> envelope = WsEnvelope.of("CONVERSATION_UPDATED", updatedResponse);
-        broadcastEnvelopeToMembers(conversation, envelope, null);
+        eventPublisher.publishEvent(new ConversationUpdatedEvent(
+                conversation.getId(),
+                conversation.getType(),
+                updatedResponse
+        ));
     }
 
     @Override
@@ -749,12 +763,14 @@ public class ConversationService implements IConversationService {
         return responses;
     }
 
-    private void broadcastMemberEventAndSystemMessage(
+    private void publishMemberChangedEvent(
             Conversation conversation,
             User eventUser,
             String eventType,
-            String systemText
+            String systemText,
+            UUID additionalRecipientId
     ) {
+        ChatMessageResponse msgResponse = null;
         if (conversation.getType() != ConversationType.CHANNEL) {
             Message systemMsg = Message.builder()
                     .conversation(conversation)
@@ -763,10 +779,7 @@ public class ConversationService implements IConversationService {
                     .body(systemText)
                     .build();
             systemMsg = messageRepository.save(systemMsg);
-
-            ChatMessageResponse msgResponse = messageMapper.toResponse(systemMsg, List.of(), null);
-            WsEnvelope<ChatMessageResponse> msgEnvelope = WsEnvelope.of("NEW_MESSAGE", msgResponse);
-            broadcastEnvelopeToMembers(conversation, msgEnvelope, eventUser.getId());
+            msgResponse = messageMapper.toResponse(systemMsg, List.of(), null);
         }
 
         MemberEventResponse memberData = new MemberEventResponse(
@@ -776,24 +789,14 @@ public class ConversationService implements IConversationService {
                 eventUser.getDisplayName(),
                 null
         );
-        WsEnvelope<MemberEventResponse> eventEnvelope = WsEnvelope.of(eventType, memberData);
-        broadcastEnvelopeToMembers(conversation, eventEnvelope, eventUser.getId());
-    }
-
-    private void broadcastEnvelopeToMembers(Conversation conversation, WsEnvelope<?> envelope, UUID eventUserId) {
-        List<UUID> memberIds = getConversationMemberIds(conversation.getId());
-        Set<UUID> targetIds = new HashSet<>(memberIds);
-        if (eventUserId != null) {
-            targetIds.add(eventUserId);
-        }
-
-        if (conversation.getType() == ConversationType.CHANNEL && targetIds.size() > 1000) {
-            messagingTemplate.convertAndSend("/topic/channels/" + conversation.getId(), envelope);
-        } else {
-            for (UUID mId : targetIds) {
-                messagingTemplate.convertAndSendToUser(mId.toString(), "/queue/chat", envelope);
-            }
-        }
+        eventPublisher.publishEvent(new ConversationMemberChangedEvent(
+                conversation.getId(),
+                conversation.getType(),
+                eventType,
+                memberData,
+                msgResponse,
+                additionalRecipientId
+        ));
     }
 
     @Override
@@ -921,11 +924,14 @@ public class ConversationService implements IConversationService {
         conversation.setSlowModeDelaySeconds(seconds);
         conversation = conversationRepository.save(conversation);
 
-        ConversationResponse updatedResponse = mapToConversationResponse(conversation, requesterId);
-        WsEnvelope<ConversationResponse> envelope = WsEnvelope.of("CONVERSATION_UPDATED", updatedResponse);
-        broadcastEnvelopeToMembers(conversation, envelope, null);
+        ConversationResponse broadcastResponse = mapToConversationResponse(conversation, null);
+        eventPublisher.publishEvent(new ConversationUpdatedEvent(
+                conversation.getId(),
+                conversation.getType(),
+                broadcastResponse
+        ));
 
-        return updatedResponse;
+        return mapToConversationResponse(conversation, requesterId);
     }
 
     @Override

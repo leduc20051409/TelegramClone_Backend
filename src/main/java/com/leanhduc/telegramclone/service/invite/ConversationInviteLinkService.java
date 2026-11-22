@@ -17,17 +17,16 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.leanhduc.telegramclone.dto.message.ChatMessageResponse;
 import com.leanhduc.telegramclone.dto.websocket.MemberEventResponse;
-import com.leanhduc.telegramclone.dto.websocket.WsEnvelope;
+import com.leanhduc.telegramclone.event.ConversationMemberChangedEvent;
+import com.leanhduc.telegramclone.event.InviteLinkUpdatedEvent;
 import com.leanhduc.telegramclone.mapper.MessageMapper;
 import com.leanhduc.telegramclone.model.enums.MessageType;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.context.ApplicationEventPublisher;
 
 import java.security.SecureRandom;
 import java.time.Instant;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -43,7 +42,7 @@ public class ConversationInviteLinkService implements IConversationInviteLinkSer
     private final InviteLinkMapper inviteLinkMapper;
     private final MessageRepository messageRepository;
     private final MessageMapper messageMapper;
-    private final SimpMessagingTemplate messagingTemplate;
+    private final ApplicationEventPublisher eventPublisher;
 
     private final SecureRandom secureRandom = new SecureRandom();
 
@@ -86,7 +85,7 @@ public class ConversationInviteLinkService implements IConversationInviteLinkSer
 
         inviteLink = inviteLinkRepository.save(inviteLink);
         InviteLinkResponse response = inviteLinkMapper.toResponse(inviteLink);
-        broadcastInviteLinkUpdated(conversationId, response);
+        publishInviteLinkUpdated(inviteLink.getConversation(), response);
         return response;
     }
 
@@ -124,7 +123,7 @@ public class ConversationInviteLinkService implements IConversationInviteLinkSer
 
         inviteLink = inviteLinkRepository.save(inviteLink);
         InviteLinkResponse response = inviteLinkMapper.toResponse(inviteLink);
-        broadcastInviteLinkUpdated(conversationId, response);
+        publishInviteLinkUpdated(inviteLink.getConversation(), response);
         return response;
     }
 
@@ -299,10 +298,10 @@ public class ConversationInviteLinkService implements IConversationInviteLinkSer
             inviteLink.setCurrentUses(inviteLink.getCurrentUses() + 1);
             inviteLink = inviteLinkRepository.save(inviteLink);
             response = inviteLinkMapper.toResponse(inviteLink);
-            broadcastInviteLinkUpdated(conversationId, response);
+            publishInviteLinkUpdated(conversation, response);
         }
 
-        broadcastJoinEvents(conversation, targetUser, target.isPublicUsernameFlow() ? null : inviteCode);
+        publishJoinEvents(conversation, targetUser, target.isPublicUsernameFlow() ? null : inviteCode);
         return response;
     }
 
@@ -319,7 +318,7 @@ public class ConversationInviteLinkService implements IConversationInviteLinkSer
         inviteLink = inviteLinkRepository.save(inviteLink);
 
         InviteLinkResponse response = inviteLinkMapper.toResponse(inviteLink);
-        broadcastInviteLinkUpdated(inviteLink.getConversation().getId(), response);
+        publishInviteLinkUpdated(inviteLink.getConversation(), response);
         return response;
     }
 
@@ -376,17 +375,16 @@ public class ConversationInviteLinkService implements IConversationInviteLinkSer
         return sb.toString();
     }
 
-    private void broadcastInviteLinkUpdated(UUID conversationId, InviteLinkResponse response) {
-        WsEnvelope<InviteLinkResponse> envelope = WsEnvelope.of("INVITE_LINK_UPDATED", response);
-        List<UUID> memberIds = memberRepository.findByConversationIdAndLeftAtIsNull(conversationId).stream()
-                .map(m -> m.getUser().getId())
-                .toList();
-        for (UUID memberId : memberIds) {
-            messagingTemplate.convertAndSendToUser(memberId.toString(), "/queue/chat", envelope);
-        }
+    private void publishInviteLinkUpdated(Conversation conversation, InviteLinkResponse response) {
+        eventPublisher.publishEvent(new InviteLinkUpdatedEvent(
+                conversation.getId(),
+                conversation.getType(),
+                response
+        ));
     }
 
-    private void broadcastJoinEvents(Conversation conversation, User targetUser, String inviteCode) {
+    private void publishJoinEvents(Conversation conversation, User targetUser, String inviteCode) {
+        ChatMessageResponse msgResponse = null;
         if (conversation.getType() != ConversationType.CHANNEL) {
             String displayName = targetUser.getDisplayName() != null && !targetUser.getDisplayName().isBlank()
                     ? targetUser.getDisplayName() : targetUser.getUsername();
@@ -401,10 +399,7 @@ public class ConversationInviteLinkService implements IConversationInviteLinkSer
                     .body(systemText)
                     .build();
             systemMsg = messageRepository.save(systemMsg);
-
-            ChatMessageResponse msgResponse = messageMapper.toResponse(systemMsg, List.of(), null);
-            WsEnvelope<ChatMessageResponse> msgEnvelope = WsEnvelope.of("NEW_MESSAGE", msgResponse);
-            broadcastEnvelopeToMembers(conversation, msgEnvelope, targetUser.getId());
+            msgResponse = messageMapper.toResponse(systemMsg, List.of(), null);
         }
 
         MemberEventResponse memberData = new MemberEventResponse(
@@ -414,25 +409,13 @@ public class ConversationInviteLinkService implements IConversationInviteLinkSer
                 targetUser.getDisplayName(),
                 null
         );
-        WsEnvelope<MemberEventResponse> eventEnvelope = WsEnvelope.of("MEMBER_JOINED", memberData);
-        broadcastEnvelopeToMembers(conversation, eventEnvelope, targetUser.getId());
-    }
-
-    private void broadcastEnvelopeToMembers(Conversation conversation, WsEnvelope<?> envelope, UUID targetUserId) {
-        List<UUID> memberIds = memberRepository.findByConversationIdAndLeftAtIsNull(conversation.getId()).stream()
-                .map(m -> m.getUser().getId())
-                .toList();
-        Set<UUID> targetIds = new HashSet<>(memberIds);
-        if (targetUserId != null) {
-            targetIds.add(targetUserId);
-        }
-
-        if (conversation.getType() == ConversationType.CHANNEL && targetIds.size() > 1000) {
-            messagingTemplate.convertAndSend("/topic/channels/" + conversation.getId(), envelope);
-        } else {
-            for (UUID mId : targetIds) {
-                messagingTemplate.convertAndSendToUser(mId.toString(), "/queue/chat", envelope);
-            }
-        }
+        eventPublisher.publishEvent(new ConversationMemberChangedEvent(
+                conversation.getId(),
+                conversation.getType(),
+                "MEMBER_JOINED",
+                memberData,
+                msgResponse,
+                null
+        ));
     }
 }

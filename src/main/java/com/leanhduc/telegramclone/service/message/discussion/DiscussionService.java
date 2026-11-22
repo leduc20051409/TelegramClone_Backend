@@ -28,7 +28,6 @@ public class DiscussionService implements IDiscussionService {
     private final MessageRepository messageRepository;
     private final MessageMediaRepository messageMediaRepository;
     private final DiscussionThreadLinkRepository discussionThreadLinkRepository;
-    private final ConversationMemberRepository memberRepository;
     private final MessageMapper messageMapper;
     private final ApplicationEventPublisher eventPublisher;
 
@@ -84,14 +83,8 @@ public class DiscussionService implements IDiscussionService {
         ChatMessageResponse groupRootResponse = messageMapper.toResponse(
                 groupRootMessage, mediaContext.mediaDtos(), null, null);
 
-        List<UUID> groupMemberIds = memberRepository
-                .findByConversationIdAndLeftAtIsNull(linkedGroup.getId())
-                .stream()
-                .map(gm -> gm.getUser().getId())
-                .toList();
-
         eventPublisher.publishEvent(new DiscussionBroadcastEvent(
-                groupRootResponse, groupMemberIds, null, null, null));
+                groupRootResponse, null, null));
 
         return 0;
     }
@@ -127,14 +120,8 @@ public class DiscussionService implements IDiscussionService {
                 updatedCount
         );
 
-        List<UUID> commentGroupMemberIds = memberRepository
-                .findByConversationIdAndLeftAtIsNull(comment.getConversation().getId())
-                .stream()
-                .map(gm -> gm.getUser().getId())
-                .toList();
-
         eventPublisher.publishEvent(new DiscussionBroadcastEvent(
-                null, null, updateDto, channelConvId, commentGroupMemberIds));
+                null, updateDto, channelConvId));
     }
 
     private DiscussionThreadLink findThreadLinkByMessage(Message msg) {

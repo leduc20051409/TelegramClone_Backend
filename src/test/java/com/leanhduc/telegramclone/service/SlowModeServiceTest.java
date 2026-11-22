@@ -5,7 +5,7 @@ import com.leanhduc.telegramclone.dto.conversation.SlowModeStatusResponse;
 import com.leanhduc.telegramclone.dto.message.ChatMessageRequest;
 import com.leanhduc.telegramclone.dto.message.ChatMessageResponse;
 import com.leanhduc.telegramclone.dto.message.ForwardMessageRequest;
-import com.leanhduc.telegramclone.dto.websocket.WsEnvelope;
+import com.leanhduc.telegramclone.event.ConversationUpdatedEvent;
 import com.leanhduc.telegramclone.exception.BusinessException;
 import com.leanhduc.telegramclone.exception.ErrorCode;
 import com.leanhduc.telegramclone.mapper.ConversationMapper;
@@ -35,7 +35,6 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
 
 import java.time.Instant;
 import java.util.*;
@@ -82,7 +81,7 @@ class SlowModeServiceTest {
         @Mock
         private IConversationInviteLinkService inviteLinkService;
         @Mock
-        private SimpMessagingTemplate messagingTemplate;
+        private ApplicationEventPublisher eventPublisher;
         @Mock
         private IPermissionService permissionService;
         @Mock
@@ -146,12 +145,8 @@ class SlowModeServiceTest {
             assertEquals(30, groupConversation.getSlowModeDelaySeconds());
             verify(conversationRepository).save(groupConversation);
 
-            // Verify CONVERSATION_UPDATED WebSocket broadcast
-            verify(messagingTemplate).convertAndSendToUser(
-                    eq(adminUserId.toString()),
-                    eq("/queue/chat"),
-                    any(WsEnvelope.class)
-            );
+            // Verify CONVERSATION_UPDATED event published for AFTER_COMMIT broadcast
+            verify(eventPublisher).publishEvent(any(ConversationUpdatedEvent.class));
         }
 
         @Test

@@ -1,15 +1,19 @@
 package com.leanhduc.telegramclone.service.message;
 
+import com.leanhduc.telegramclone.dto.message.MessageReactionDto;
 import com.leanhduc.telegramclone.dto.message.ToggleReactionResult;
+import com.leanhduc.telegramclone.event.MessageReactionChangedEvent;
 import com.leanhduc.telegramclone.exception.BusinessException;
 import com.leanhduc.telegramclone.exception.ErrorCode;
 import com.leanhduc.telegramclone.mapper.MessageMapper;
 import com.leanhduc.telegramclone.model.*;
+import com.leanhduc.telegramclone.model.enums.ConversationType;
 import com.leanhduc.telegramclone.repository.ConversationMemberRepository;
 import com.leanhduc.telegramclone.repository.MessageReactionRepository;
 import com.leanhduc.telegramclone.repository.MessageRepository;
 import com.leanhduc.telegramclone.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,6 +29,7 @@ public class MessageReactionService implements IMessageReactionService {
     private final UserRepository userRepository;
     private final ConversationMemberRepository memberRepository;
     private final MessageMapper messageMapper;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Override
     @Transactional
@@ -33,8 +38,9 @@ public class MessageReactionService implements IMessageReactionService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.MESSAGE_NOT_FOUND));
 
         UUID conversationId = message.getConversation().getId();
+        ConversationType conversationType = message.getConversation().getType();
         ConversationMemberId memberId = new ConversationMemberId(conversationId, userId);
-        
+
         ConversationMember member = memberRepository.findById(memberId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_IN_CONVERSATION));
         if (member.getLeftAt() != null) {
@@ -68,6 +74,14 @@ public class MessageReactionService implements IMessageReactionService {
 
         messageRepository.saveAndFlush(message);
 
-        return new ToggleReactionResult(conversationId, messageMapper.mapReactions(message.getReactions()));
+        List<MessageReactionDto> reactions = messageMapper.mapReactions(message.getReactions());
+        eventPublisher.publishEvent(new MessageReactionChangedEvent(
+                conversationId,
+                conversationType,
+                messageId,
+                reactions
+        ));
+
+        return new ToggleReactionResult(conversationId, reactions);
     }
 }

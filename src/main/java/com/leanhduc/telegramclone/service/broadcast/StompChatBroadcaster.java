@@ -8,7 +8,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Component;
 
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 @Slf4j
@@ -23,11 +25,26 @@ public class StompChatBroadcaster implements ChatBroadcaster {
 
     @Override
     public void broadcast(UUID conversationId, ConversationType type, WsEnvelope<?> envelope) {
-        broadcastExcept(conversationId, type, null, envelope);
+        deliver(conversationId, type, null, null, envelope);
     }
 
     @Override
     public void broadcastExcept(UUID conversationId, ConversationType type, UUID excludedUserId, WsEnvelope<?> envelope) {
+        deliver(conversationId, type, excludedUserId, null, envelope);
+    }
+
+    @Override
+    public void broadcastIncluding(UUID conversationId, ConversationType type, UUID additionalUserId, WsEnvelope<?> envelope) {
+        deliver(conversationId, type, null, additionalUserId, envelope);
+    }
+
+    private void deliver(
+            UUID conversationId,
+            ConversationType type,
+            UUID excludedUserId,
+            UUID additionalUserId,
+            WsEnvelope<?> envelope
+    ) {
         if (conversationId == null || envelope == null) {
             return;
         }
@@ -36,16 +53,20 @@ public class StompChatBroadcaster implements ChatBroadcaster {
             long memberCount = memberRepository.countByConversationIdAndLeftAtIsNull(conversationId);
             if (memberCount > LARGE_CHANNEL_THRESHOLD) {
                 messagingTemplate.convertAndSend("/topic/channels/" + conversationId, envelope);
+                if (additionalUserId != null && !additionalUserId.equals(excludedUserId)) {
+                    messagingTemplate.convertAndSendToUser(additionalUserId.toString(), "/queue/chat", envelope);
+                }
                 return;
             }
         }
 
-        List<UUID> memberIds = memberRepository.findByConversationIdAndLeftAtIsNull(conversationId)
-                .stream()
-                .map(m -> m.getId() != null ? m.getId().getUserId() : m.getUser().getId())
-                .toList();
+        List<UUID> activeUserIds = memberRepository.findActiveUserIdsByConversationId(conversationId);
+        Set<UUID> recipients = new LinkedHashSet<>(activeUserIds);
+        if (additionalUserId != null) {
+            recipients.add(additionalUserId);
+        }
 
-        for (UUID memberId : memberIds) {
+        for (UUID memberId : recipients) {
             if (excludedUserId != null && memberId.equals(excludedUserId)) {
                 continue;
             }

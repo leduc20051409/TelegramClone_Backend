@@ -12,7 +12,6 @@ public record MessagesForwardedEvent(
     public record TargetBroadcastDto(
             UUID conversationId,
             ConversationType conversationType,
-            List<UUID> memberIds,
             ChatMessageResponse messageResponse
     ) {}
 }

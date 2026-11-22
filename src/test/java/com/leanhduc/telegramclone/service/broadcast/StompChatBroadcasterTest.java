@@ -1,8 +1,6 @@
 package com.leanhduc.telegramclone.service.broadcast;
 
 import com.leanhduc.telegramclone.dto.websocket.WsEnvelope;
-import com.leanhduc.telegramclone.model.ConversationMember;
-import com.leanhduc.telegramclone.model.ConversationMemberId;
 import com.leanhduc.telegramclone.model.enums.ConversationType;
 import com.leanhduc.telegramclone.repository.ConversationMemberRepository;
 import org.junit.jupiter.api.DisplayName;
@@ -44,7 +42,7 @@ class StompChatBroadcasterTest {
         broadcaster.broadcast(channelId, ConversationType.CHANNEL, envelope);
 
         verify(messagingTemplate, times(1)).convertAndSend(eq("/topic/channels/" + channelId), eq(envelope));
-        verify(memberRepository, never()).findByConversationIdAndLeftAtIsNull(any());
+        verify(memberRepository, never()).findActiveUserIdsByConversationId(any());
         verify(messagingTemplate, never()).convertAndSendToUser(anyString(), anyString(), any());
     }
 
@@ -57,10 +55,7 @@ class StompChatBroadcasterTest {
         WsEnvelope<String> envelope = WsEnvelope.of("TEST_EVENT", "Hello");
 
         when(memberRepository.countByConversationIdAndLeftAtIsNull(channelId)).thenReturn(2L);
-        when(memberRepository.findByConversationIdAndLeftAtIsNull(channelId)).thenReturn(List.of(
-                ConversationMember.builder().id(new ConversationMemberId(channelId, user1)).build(),
-                ConversationMember.builder().id(new ConversationMemberId(channelId, user2)).build()
-        ));
+        when(memberRepository.findActiveUserIdsByConversationId(channelId)).thenReturn(List.of(user1, user2));
 
         broadcaster.broadcast(channelId, ConversationType.CHANNEL, envelope);
 
@@ -77,10 +72,7 @@ class StompChatBroadcasterTest {
         UUID user2 = UUID.randomUUID();
         WsEnvelope<String> envelope = WsEnvelope.of("TEST_EVENT", "Group update");
 
-        when(memberRepository.findByConversationIdAndLeftAtIsNull(groupId)).thenReturn(List.of(
-                ConversationMember.builder().id(new ConversationMemberId(groupId, user1)).build(),
-                ConversationMember.builder().id(new ConversationMemberId(groupId, user2)).build()
-        ));
+        when(memberRepository.findActiveUserIdsByConversationId(groupId)).thenReturn(List.of(user1, user2));
 
         broadcaster.broadcast(groupId, ConversationType.GROUP, envelope);
 
@@ -97,15 +89,28 @@ class StompChatBroadcasterTest {
         UUID otherUser = UUID.randomUUID();
         WsEnvelope<String> envelope = WsEnvelope.of("MESSAGES_READ", "read-receipt");
 
-        when(memberRepository.findByConversationIdAndLeftAtIsNull(convId)).thenReturn(List.of(
-                ConversationMember.builder().id(new ConversationMemberId(convId, readerId)).build(),
-                ConversationMember.builder().id(new ConversationMemberId(convId, otherUser)).build()
-        ));
+        when(memberRepository.findActiveUserIdsByConversationId(convId)).thenReturn(List.of(readerId, otherUser));
 
         broadcaster.broadcastExcept(convId, ConversationType.GROUP, readerId, envelope);
 
         verify(messagingTemplate, never()).convertAndSendToUser(eq(readerId.toString()), anyString(), any());
         verify(messagingTemplate, times(1)).convertAndSendToUser(eq(otherUser.toString()), eq("/queue/chat"), eq(envelope));
+    }
+
+    @Test
+    @DisplayName("When broadcastIncluding is called, should include additional user without duplicate")
+    void broadcastIncluding_whenAdditionalUser_shouldDeliverOnceToEachRecipient() {
+        UUID convId = UUID.randomUUID();
+        UUID activeUser = UUID.randomUUID();
+        UUID leftUser = UUID.randomUUID();
+        WsEnvelope<String> envelope = WsEnvelope.of("MEMBER_LEFT", "left");
+
+        when(memberRepository.findActiveUserIdsByConversationId(convId)).thenReturn(List.of(activeUser));
+
+        broadcaster.broadcastIncluding(convId, ConversationType.GROUP, leftUser, envelope);
+
+        verify(messagingTemplate, times(1)).convertAndSendToUser(eq(activeUser.toString()), eq("/queue/chat"), eq(envelope));
+        verify(messagingTemplate, times(1)).convertAndSendToUser(eq(leftUser.toString()), eq("/queue/chat"), eq(envelope));
     }
 
     @Test

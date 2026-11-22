@@ -48,10 +48,10 @@ class MessageForwardBroadcastListenerTest {
         );
 
         MessagesForwardedEvent.TargetBroadcastDto b1 = new MessagesForwardedEvent.TargetBroadcastDto(
-                conv1, ConversationType.GROUP, List.of(senderId), resp1
+                conv1, ConversationType.GROUP, resp1
         );
         MessagesForwardedEvent.TargetBroadcastDto b2 = new MessagesForwardedEvent.TargetBroadcastDto(
-                conv2, ConversationType.CHANNEL, List.of(), resp2
+                conv2, ConversationType.CHANNEL, resp2
         );
 
         MessagesForwardedEvent event = new MessagesForwardedEvent(List.of(b1, b2));

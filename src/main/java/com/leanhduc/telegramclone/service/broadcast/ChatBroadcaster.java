@@ -8,4 +8,5 @@ import java.util.UUID;
 public interface ChatBroadcaster {
     void broadcast(UUID conversationId, ConversationType type, WsEnvelope<?> envelope);
     void broadcastExcept(UUID conversationId, ConversationType type, UUID excludedUserId, WsEnvelope<?> envelope);
+    void broadcastIncluding(UUID conversationId, ConversationType type, UUID additionalUserId, WsEnvelope<?> envelope);
 }

@@ -203,7 +203,6 @@ class MessageServiceForwardTest {
         when(conversationRepository.findById(target1)).thenReturn(Optional.of(conv1));
         when(memberRepository.findById(new ConversationMemberId(target1, currentUserId))).thenReturn(Optional.of(member1));
         when(permissionService.hasMemberPermission(member1, MemberPermission.SEND_MESSAGES)).thenReturn(true);
-        when(memberRepository.findByConversationIdAndLeftAtIsNull(target1)).thenReturn(List.of(member1));
 
         // Target 2 fails permission
         when(conversationRepository.findById(target2)).thenReturn(Optional.of(conv2));
@@ -241,7 +240,6 @@ class MessageServiceForwardTest {
         when(conversationRepository.findById(targetId)).thenReturn(Optional.of(targetConv));
         when(memberRepository.findById(new ConversationMemberId(targetId, currentUserId))).thenReturn(Optional.of(targetMember));
         when(permissionService.hasMemberPermission(targetMember, MemberPermission.SEND_MESSAGES)).thenReturn(true);
-        when(memberRepository.findByConversationIdAndLeftAtIsNull(targetId)).thenReturn(List.of(targetMember));
 
         Message savedMsg = Message.builder()
                 .id(200L)
@@ -299,7 +297,6 @@ class MessageServiceForwardTest {
         when(conversationRepository.findById(targetId)).thenReturn(Optional.of(targetConv));
         when(memberRepository.findById(new ConversationMemberId(targetId, currentUserId))).thenReturn(Optional.of(targetMember));
         when(permissionService.hasMemberPermission(targetMember, MemberPermission.SEND_MESSAGES)).thenReturn(true);
-        when(memberRepository.findByConversationIdAndLeftAtIsNull(targetId)).thenReturn(List.of(targetMember));
 
         when(messageRepository.save(argThat(msg ->
                 msg.getForwardedFromUser().equals(originalCreator) &&

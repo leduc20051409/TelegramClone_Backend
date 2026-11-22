@@ -112,8 +112,7 @@ class MessageBroadcastListenerTest {
 
         MessageEditedEvent event = new MessageEditedEvent(
                 response,
-                ConversationType.GROUP,
-                List.of(senderId)
+                ConversationType.GROUP
         );
 
         listener.handleMessageEdited(event);
@@ -142,8 +141,7 @@ class MessageBroadcastListenerTest {
         MessageDeletedEvent event = new MessageDeletedEvent(
                 messageId,
                 conversationId,
-                ConversationType.CHANNEL,
-                List.of()
+                ConversationType.CHANNEL
         );
 
         listener.handleMessageDeleted(event);
@@ -172,9 +170,9 @@ class MessageBroadcastListenerTest {
         listener.handleMessagesRead(null);
         listener.handleMessagesRead(new MessagesReadEvent(null, ConversationType.GROUP, null, 1L));
         listener.handleMessageEdited(null);
-        listener.handleMessageEdited(new MessageEditedEvent(null, ConversationType.GROUP, List.of()));
+        listener.handleMessageEdited(new MessageEditedEvent(null, ConversationType.GROUP));
         listener.handleMessageDeleted(null);
-        listener.handleMessageDeleted(new MessageDeletedEvent(null, null, ConversationType.GROUP, List.of()));
+        listener.handleMessageDeleted(new MessageDeletedEvent(null, null, ConversationType.GROUP));
 
         verifyNoInteractions(chatBroadcaster);
     }

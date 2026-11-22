@@ -48,7 +48,7 @@ class DiscussionBroadcastListenerTest {
         );
 
         DiscussionBroadcastEvent event = new DiscussionBroadcastEvent(
-                groupRoot, List.of(), countUpdate, channelId, List.of()
+                groupRoot, countUpdate, channelId
         );
 
         listener.handleDiscussionBroadcast(event);
