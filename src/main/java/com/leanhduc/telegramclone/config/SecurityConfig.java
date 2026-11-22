@@ -4,6 +4,7 @@ import com.leanhduc.telegramclone.security.JwtAccessDeniedHandler;
 import com.leanhduc.telegramclone.security.JwtAuthEntryPoint;
 import com.leanhduc.telegramclone.security.JwtAuthenticationFilter;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -28,6 +29,9 @@ public class SecurityConfig {
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final JwtAuthEntryPoint jwtAuthEntryPoint;
     private final JwtAccessDeniedHandler jwtAccessDeniedHandler;
+
+    @Value("${app.cors.allowed-origins}")
+    private List<String> allowedOrigins;
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
@@ -55,8 +59,13 @@ public class SecurityConfig {
     }
 
     private CorsConfigurationSource corsConfigurationSource() {
+        List<String> normalizedOrigins = allowedOrigins.stream()
+                .map(String::trim)
+                .filter(origin -> !origin.isEmpty())
+                .toList();
+
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOriginPatterns(List.of("*"));
+        configuration.setAllowedOriginPatterns(normalizedOrigins);
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("*"));
         configuration.setAllowCredentials(true);

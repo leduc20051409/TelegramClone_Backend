@@ -6,9 +6,17 @@ import com.cloudinary.utils.ObjectUtils;
 import com.leanhduc.telegramclone.dto.media.UploadResponseDto;
 import com.leanhduc.telegramclone.exception.BusinessException;
 import com.leanhduc.telegramclone.exception.ErrorCode;
+import com.leanhduc.telegramclone.model.Conversation;
+import com.leanhduc.telegramclone.model.ConversationMember;
+import com.leanhduc.telegramclone.model.ConversationMemberId;
 import com.leanhduc.telegramclone.model.Media;
+import com.leanhduc.telegramclone.model.enums.AdminPermission;
+import com.leanhduc.telegramclone.model.enums.ConversationType;
 import com.leanhduc.telegramclone.model.enums.MediaStatus;
+import com.leanhduc.telegramclone.repository.ConversationMemberRepository;
+import com.leanhduc.telegramclone.repository.ConversationRepository;
 import com.leanhduc.telegramclone.repository.MediaRepository;
+import com.leanhduc.telegramclone.service.conversation.IPermissionService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -28,6 +36,9 @@ public class MediaService implements IMediaService {
 
     private final Cloudinary cloudinary;
     private final MediaRepository mediaRepository;
+    private final ConversationRepository conversationRepository;
+    private final ConversationMemberRepository conversationMemberRepository;
+    private final IPermissionService permissionService;
 
     private static final long MAX_SIZE = 10 * 1024 * 1024;
     private static final List<String> ALLOWED_TYPES = Arrays.asList(
@@ -120,20 +131,9 @@ public class MediaService implements IMediaService {
             throw new BusinessException(ErrorCode.UNSUPPORTED_FILE_TYPE);
         }
 
-        String folder;
-        String filename;
-        if ("CONVERSATION".equalsIgnoreCase(targetType) || "GROUP".equalsIgnoreCase(targetType)
-                || "CHANNEL".equalsIgnoreCase(targetType)) {
-            if (targetId == null || targetId.isBlank()) {
-                throw new BusinessException(ErrorCode.INVALID_INPUT);
-            }
-            folder = "telegram-clone/" + targetId;
-            filename = "conv_avatar";
-        } else {
-            String resolvedUserId = (targetId != null && !targetId.isBlank()) ? targetId : ownerId.toString();
-            folder = "telegram-clone/" + resolvedUserId;
-            filename = "user_avatar";
-        }
+        AvatarTarget target = resolveAvatarTarget(ownerId, targetType, targetId);
+        String folder = target.folder();
+        String filename = target.filename();
 
         try {
             Map<String, Object> result = cloudinary.uploader().upload(
@@ -200,6 +200,53 @@ public class MediaService implements IMediaService {
             throw new BusinessException(ErrorCode.DELETE_MEDIA_FAILED);
         }
         mediaRepository.delete(media);
+    }
+
+    private AvatarTarget resolveAvatarTarget(UUID ownerId, String targetType, String targetId) {
+        if ("CONVERSATION".equalsIgnoreCase(targetType)
+                || "GROUP".equalsIgnoreCase(targetType)
+                || "CHANNEL".equalsIgnoreCase(targetType)) {
+            if (targetId == null || targetId.isBlank()) {
+                throw new BusinessException(ErrorCode.INVALID_INPUT);
+            }
+            UUID conversationId;
+            try {
+                conversationId = UUID.fromString(targetId.trim());
+            } catch (IllegalArgumentException ex) {
+                throw new BusinessException(ErrorCode.INVALID_INPUT);
+            }
+
+            Conversation conversation = conversationRepository.findById(conversationId)
+                    .orElseThrow(() -> new BusinessException(ErrorCode.CONVERSATION_NOT_FOUND));
+
+            if (conversation.getType() == ConversationType.PRIVATE) {
+                throw new BusinessException(ErrorCode.PERMISSION_DENIED);
+            }
+
+            ConversationMember member = conversationMemberRepository
+                    .findById(new ConversationMemberId(conversationId, ownerId))
+                    .orElseThrow(() -> new BusinessException(ErrorCode.NOT_IN_CONVERSATION));
+
+            if (member.getLeftAt() != null) {
+                throw new BusinessException(ErrorCode.NOT_IN_CONVERSATION);
+            }
+
+            if (!permissionService.hasAdminPermission(member, AdminPermission.CHANGE_INFO)) {
+                throw new BusinessException(ErrorCode.PERMISSION_DENIED);
+            }
+
+            return new AvatarTarget("telegram-clone/" + conversationId, "conv_avatar");
+        }
+
+        if (targetType == null || targetType.isBlank() || "USER".equalsIgnoreCase(targetType)) {
+            // Always bind USER avatar uploads to the authenticated Principal, ignoring client targetId
+            return new AvatarTarget("telegram-clone/" + ownerId, "user_avatar");
+        }
+
+        throw new BusinessException(ErrorCode.INVALID_INPUT);
+    }
+
+    private record AvatarTarget(String folder, String filename) {
     }
 
     private Integer toInteger(Object value) {

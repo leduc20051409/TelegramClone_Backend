@@ -4,6 +4,7 @@ import com.leanhduc.telegramclone.repository.UserRepository;
 import com.leanhduc.telegramclone.security.JwtTokenProvider;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
@@ -33,6 +34,9 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     private final JwtTokenProvider jwtTokenProvider;
     private final UserRepository userRepository;
 
+    @Value("${app.cors.allowed-origins}")
+    private List<String> allowedOrigins;
+
     @Override
     public void configureMessageBroker(MessageBrokerRegistry registry) {
         registry.enableSimpleBroker("/topic", "/queue");
@@ -42,8 +46,13 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
+        String[] normalizedOrigins = allowedOrigins.stream()
+                .map(String::trim)
+                .filter(origin -> !origin.isEmpty())
+                .toArray(String[]::new);
+
         registry.addEndpoint("/ws")
-                .setAllowedOriginPatterns("http://localhost:5173")
+                .setAllowedOriginPatterns(normalizedOrigins)
                 .withSockJS();
     }
 

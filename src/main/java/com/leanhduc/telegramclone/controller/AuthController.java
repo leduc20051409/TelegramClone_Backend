@@ -7,6 +7,7 @@ import com.leanhduc.telegramclone.dto.auth.ForgotPasswordRequest;
 import com.leanhduc.telegramclone.dto.auth.ResetPasswordRequest;
 import com.leanhduc.telegramclone.service.Auth.IAuthService;
 import com.leanhduc.telegramclone.service.RefreshToken.IRefreshTokenService;
+import com.leanhduc.telegramclone.utils.CookieUtil;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
@@ -18,21 +19,20 @@ import jakarta.validation.Valid;
 
 import java.util.UUID;
 
-import static com.leanhduc.telegramclone.utils.CookieUtil.*;
-
 @RestController
 @RequestMapping("/api/auth")
 @RequiredArgsConstructor
 public class AuthController {
     private final IAuthService authService;
     private final IRefreshTokenService refreshTokenService;
+    private final CookieUtil cookieUtil;
 
     @PostMapping("/register")
     public ResponseEntity<AuthResponse> register(
             @Valid @RequestBody RegisterRequest request,
             HttpServletResponse response) {
         AuthResponse authResponse = authService.register(request);
-        setRefreshTokenCookie(response, authResponse.getRefreshToken());
+        cookieUtil.setRefreshTokenCookie(response, authResponse.getRefreshToken());
         authResponse.setRefreshToken(null);
         return ResponseEntity.ok(authResponse);
     }
@@ -42,7 +42,7 @@ public class AuthController {
             @Valid @RequestBody LoginRequest request,
             HttpServletResponse response) {
         AuthResponse authResponse = authService.login(request);
-        setRefreshTokenCookie(response, authResponse.getRefreshToken());
+        cookieUtil.setRefreshTokenCookie(response, authResponse.getRefreshToken());
         authResponse.setRefreshToken(null);
         return ResponseEntity.ok(authResponse);
     }
@@ -51,9 +51,9 @@ public class AuthController {
     public ResponseEntity<AuthResponse> refreshToken(
             HttpServletRequest request,
             HttpServletResponse response) {
-        String refreshToken = getRefreshTokenFromCookie(request);
+        String refreshToken = cookieUtil.getRefreshTokenFromCookie(request);
         AuthResponse authResponse = authService.refreshAccessToken(refreshToken);
-        setRefreshTokenCookie(response, authResponse.getRefreshToken());
+        cookieUtil.setRefreshTokenCookie(response, authResponse.getRefreshToken());
 
         return ResponseEntity.ok(authResponse);
     }
@@ -63,9 +63,9 @@ public class AuthController {
     public ResponseEntity<Void> logout(
             HttpServletRequest request,
             HttpServletResponse response) {
-        String refreshToken = getRefreshTokenFromCookie(request);
+        String refreshToken = cookieUtil.getRefreshTokenFromCookie(request);
         refreshTokenService.revokeRefreshToken(refreshToken);
-        clearRefreshTokenCookie(response);
+        cookieUtil.clearRefreshTokenCookie(response);
 
         return ResponseEntity.noContent().build();
     }
@@ -76,7 +76,7 @@ public class AuthController {
             HttpServletResponse response) {
         UUID userId = (UUID) authentication.getPrincipal();
         refreshTokenService.revokeAllTokensByUser(userId);
-        clearRefreshTokenCookie(response);
+        cookieUtil.clearRefreshTokenCookie(response);
         return ResponseEntity.noContent().build();
     }
 

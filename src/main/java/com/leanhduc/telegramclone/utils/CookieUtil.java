@@ -3,28 +3,40 @@ package com.leanhduc.telegramclone.utils;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseCookie;
+import org.springframework.stereotype.Component;
 
 import java.time.Duration;
 
+/**
+ * Helper component for managing the refresh token HTTP-only cookie across environments.
+ */
+@Component
 public class CookieUtil {
-    public static void setRefreshTokenCookie(HttpServletResponse response, String refreshToken) {
-        ResponseCookie cookie = ResponseCookie.from("refreshToken", refreshToken)
-                .httpOnly(true)
-                .secure(false) // Set to true if using HTTPS
-                .path("/")
-                .maxAge(Duration.ofDays(7))
-                .sameSite("Lax") // Use "Strict" or "Lax" based on your requirements
-                .build();
+
+    private static final String REFRESH_TOKEN_COOKIE_NAME = "refreshToken";
+
+    @Value("${app.cookie.secure:true}")
+    private boolean secure;
+
+    @Value("${app.cookie.same-site:Lax}")
+    private String sameSite;
+
+    @Value("${jwt.refreshTokenExpirationMs:604800000}")
+    private long refreshTokenExpirationMs;
+
+    public void setRefreshTokenCookie(HttpServletResponse response, String refreshToken) {
+        ResponseCookie cookie = buildRefreshTokenCookie(refreshToken, Duration.ofMillis(refreshTokenExpirationMs));
         response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
     }
 
-    public static String getRefreshTokenFromCookie(HttpServletRequest request) {
+    public String getRefreshTokenFromCookie(HttpServletRequest request) {
         Cookie[] cookies = request.getCookies();
         if (cookies != null) {
             for (Cookie cookie : cookies) {
-                if ("refreshToken".equals(cookie.getName())) {
+                if (REFRESH_TOKEN_COOKIE_NAME.equals(cookie.getName())) {
                     return cookie.getValue();
                 }
             }
@@ -32,14 +44,18 @@ public class CookieUtil {
         return null;
     }
 
-    public static void clearRefreshTokenCookie(HttpServletResponse response) {
-        ResponseCookie cookie = ResponseCookie.from("refreshToken", "")
-                .httpOnly(true)
-                .secure(false) // Set to true if using HTTPS
-                .path("/")
-                .maxAge(Duration.ZERO)
-                .sameSite("Lax") // Use "Strict" or "Lax" based on your requirements
-                .build();
+    public void clearRefreshTokenCookie(HttpServletResponse response) {
+        ResponseCookie cookie = buildRefreshTokenCookie("", Duration.ZERO);
         response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
+    }
+
+    private ResponseCookie buildRefreshTokenCookie(String value, Duration maxAge) {
+        return ResponseCookie.from(REFRESH_TOKEN_COOKIE_NAME, value)
+                .httpOnly(true)
+                .secure(secure)
+                .path("/")
+                .maxAge(maxAge)
+                .sameSite(sameSite)
+                .build();
     }
 }

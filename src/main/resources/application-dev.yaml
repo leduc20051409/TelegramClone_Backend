@@ -1,3 +1,7 @@
+app:
+  cookie:
+    secure: ${COOKIE_SECURE:false}
+
 spring:
   config:
     import: optional:file:.env.dev[.properties]

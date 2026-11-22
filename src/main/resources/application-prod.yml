@@ -1,3 +1,9 @@
+app:
+  frontend-url: ${FRONTEND_URL}
+  cookie:
+    secure: ${COOKIE_SECURE:true}
+    same-site: ${COOKIE_SAME_SITE:Lax}
+
 spring:
   datasource:
     url: ${SPRING_DATASOURCE_URL}
