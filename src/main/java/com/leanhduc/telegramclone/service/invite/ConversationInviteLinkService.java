@@ -21,6 +21,7 @@ import com.leanhduc.telegramclone.event.ConversationMemberChangedEvent;
 import com.leanhduc.telegramclone.event.InviteLinkUpdatedEvent;
 import com.leanhduc.telegramclone.mapper.MessageMapper;
 import com.leanhduc.telegramclone.model.enums.MessageType;
+import com.leanhduc.telegramclone.model.enums.WsEventType;
 import org.springframework.context.ApplicationEventPublisher;
 
 import java.security.SecureRandom;
@@ -412,7 +413,7 @@ public class ConversationInviteLinkService implements IConversationInviteLinkSer
         eventPublisher.publishEvent(new ConversationMemberChangedEvent(
                 conversation.getId(),
                 conversation.getType(),
-                "MEMBER_JOINED",
+                WsEventType.MEMBER_JOINED,
                 memberData,
                 msgResponse,
                 null

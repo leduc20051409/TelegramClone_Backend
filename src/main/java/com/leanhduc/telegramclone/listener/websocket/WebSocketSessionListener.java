@@ -1,4 +1,4 @@
-package com.leanhduc.telegramclone.listener;
+package com.leanhduc.telegramclone.listener.websocket;
 
 import com.leanhduc.telegramclone.service.Presence.IPresenceService;
 import com.leanhduc.telegramclone.service.typing.ITypingService;
@@ -16,45 +16,34 @@ import java.util.UUID;
 @Component
 @Slf4j
 @RequiredArgsConstructor
-public class WebSocketEventListener {
+public class WebSocketSessionListener {
     private final IPresenceService presenceService;
     private final ITypingService typingService;
 
-    // 1. Xử lý khi User Connect
     @EventListener
     public void handleWebSocketConnectListener(SessionConnectedEvent event) {
         StompHeaderAccessor headerAccessor = StompHeaderAccessor.wrap(event.getMessage());
         Principal principal = headerAccessor.getUser();
-
-        // Lấy Session ID của kết nối WebSocket hiện tại
         String sessionId = headerAccessor.getSessionId();
 
         if (principal != null && sessionId != null) {
             UUID userId = UUID.fromString(principal.getName());
-
-            // Truyền cả 2 tham số vào hàm connect của bạn
             presenceService.connect(userId, sessionId);
             log.info("User Connect: ID={}, Session={}", userId, sessionId);
         }
     }
 
-    // 2. Xử lý khi User Disconnect
     @EventListener
     public void handleWebSocketDisconnectListener(SessionDisconnectEvent event) {
         StompHeaderAccessor headerAccessor = StompHeaderAccessor.wrap(event.getMessage());
         Principal principal = headerAccessor.getUser();
-
-        // Lấy Session ID của tab/thiết bị vừa ngắt kết nối
         String sessionId = headerAccessor.getSessionId();
 
         if (principal != null && sessionId != null) {
             UUID userId = UUID.fromString(principal.getName());
-
-            // Truyền cả 2 tham số vào hàm disconnect của bạn
             presenceService.disconnect(userId, sessionId);
             log.info("User Disconnect: ID={}, Session={}", userId, sessionId);
 
-            // Xóa tất cả các trạng thái đang gõ phím của user này trong Redis
             typingService.clearTypingForUser(userId);
         }
     }

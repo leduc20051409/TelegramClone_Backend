@@ -6,6 +6,7 @@ import com.leanhduc.telegramclone.dto.message.ChatTypingRequest;
 import com.leanhduc.telegramclone.dto.message.ChatTypingResponse;
 import com.leanhduc.telegramclone.dto.websocket.WsEnvelope;
 import com.leanhduc.telegramclone.model.enums.ConversationType;
+import com.leanhduc.telegramclone.model.enums.WsEventType;
 import com.leanhduc.telegramclone.service.conversation.IConversationService;
 import com.leanhduc.telegramclone.service.message.IMessageService;
 import com.leanhduc.telegramclone.service.typing.ITypingService;
@@ -59,7 +60,7 @@ public class ChatController {
 
         // Broadcast to other members
         ChatTypingResponse response = new ChatTypingResponse(request.conversationId(), userId, request.isTyping());
-        WsEnvelope<ChatTypingResponse> envelope = WsEnvelope.of("TYPING", response);
+        WsEnvelope<ChatTypingResponse> envelope = WsEnvelope.of(WsEventType.TYPING, response);
 
         for (UUID memberId : memberIds) {
             if (!memberId.equals(userId)) {

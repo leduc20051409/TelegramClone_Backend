@@ -1,14 +1,15 @@
-package com.leanhduc.telegramclone.listener;
+package com.leanhduc.telegramclone.listener.broadcast;
 
+import com.leanhduc.telegramclone.dto.conversation.ConversationResponse;
 import com.leanhduc.telegramclone.dto.invite.InviteLinkResponse;
 import com.leanhduc.telegramclone.dto.message.ChatMessageResponse;
-import com.leanhduc.telegramclone.dto.conversation.ConversationResponse;
 import com.leanhduc.telegramclone.dto.websocket.MemberEventResponse;
 import com.leanhduc.telegramclone.dto.websocket.WsEnvelope;
 import com.leanhduc.telegramclone.event.ConversationMemberChangedEvent;
 import com.leanhduc.telegramclone.event.ConversationUpdatedEvent;
 import com.leanhduc.telegramclone.event.InviteLinkUpdatedEvent;
 import com.leanhduc.telegramclone.model.enums.ConversationType;
+import com.leanhduc.telegramclone.model.enums.WsEventType;
 import com.leanhduc.telegramclone.service.broadcast.ChatBroadcaster;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -29,7 +30,7 @@ public class ConversationBroadcastListener {
             return;
         }
 
-        WsEnvelope<ConversationResponse> envelope = WsEnvelope.of("CONVERSATION_UPDATED", event.conversation());
+        WsEnvelope<ConversationResponse> envelope = WsEnvelope.of(WsEventType.CONVERSATION_UPDATED, event.conversation());
         chatBroadcaster.broadcast(event.conversationId(), event.conversationType(), envelope);
     }
 
@@ -40,7 +41,7 @@ public class ConversationBroadcastListener {
         }
 
         if (event.systemMessage() != null) {
-            WsEnvelope<ChatMessageResponse> msgEnvelope = WsEnvelope.of("NEW_MESSAGE", event.systemMessage());
+            WsEnvelope<ChatMessageResponse> msgEnvelope = WsEnvelope.of(WsEventType.NEW_MESSAGE, event.systemMessage());
             broadcastWithOptionalRecipient(
                     event.conversationId(),
                     event.conversationType(),
@@ -66,7 +67,7 @@ public class ConversationBroadcastListener {
             return;
         }
 
-        WsEnvelope<InviteLinkResponse> envelope = WsEnvelope.of("INVITE_LINK_UPDATED", event.inviteLink());
+        WsEnvelope<InviteLinkResponse> envelope = WsEnvelope.of(WsEventType.INVITE_LINK_UPDATED, event.inviteLink());
         chatBroadcaster.broadcast(event.conversationId(), event.conversationType(), envelope);
     }
 

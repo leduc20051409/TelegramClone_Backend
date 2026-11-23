@@ -21,6 +21,7 @@ import com.leanhduc.telegramclone.dto.websocket.MemberEventResponse;
 import com.leanhduc.telegramclone.event.ConversationMemberChangedEvent;
 import com.leanhduc.telegramclone.event.ConversationUpdatedEvent;
 import com.leanhduc.telegramclone.model.enums.MessageType;
+import com.leanhduc.telegramclone.model.enums.WsEventType;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.redis.core.RedisTemplate;
 import lombok.RequiredArgsConstructor;
@@ -205,7 +206,7 @@ public class ConversationService implements IConversationService {
         User user = member.getUser();
         String displayName = user.getDisplayName() != null && !user.getDisplayName().isBlank()
                 ? user.getDisplayName() : user.getUsername();
-        publishMemberChangedEvent(conversation, user, "MEMBER_LEFT", displayName + " left the group", userId);
+        publishMemberChangedEvent(conversation, user, WsEventType.MEMBER_LEFT, displayName + " left the group", userId);
     }
 
     @Override
@@ -265,7 +266,7 @@ public class ConversationService implements IConversationService {
                 ? targetName + " joined the group"
                 : requesterName + " added " + targetName + " to the group";
 
-        publishMemberChangedEvent(conversation, targetUser, "MEMBER_JOINED", systemText, null);
+        publishMemberChangedEvent(conversation, targetUser, WsEventType.MEMBER_JOINED, systemText, null);
 
         return mapToConversationResponse(conversation, requesterId);
     }
@@ -390,7 +391,7 @@ public class ConversationService implements IConversationService {
         String requesterName = requester.getDisplayName() != null && !requester.getDisplayName().isBlank()
                 ? requester.getDisplayName() : requester.getUsername();
 
-        publishMemberChangedEvent(conversation, targetUser, "MEMBER_LEFT", requesterName + " removed " + targetName + " from the group", targetUserId);
+        publishMemberChangedEvent(conversation, targetUser, WsEventType.MEMBER_LEFT, requesterName + " removed " + targetName + " from the group", targetUserId);
     }
 
     @Override
@@ -766,7 +767,7 @@ public class ConversationService implements IConversationService {
     private void publishMemberChangedEvent(
             Conversation conversation,
             User eventUser,
-            String eventType,
+            WsEventType eventType,
             String systemText,
             UUID additionalRecipientId
     ) {

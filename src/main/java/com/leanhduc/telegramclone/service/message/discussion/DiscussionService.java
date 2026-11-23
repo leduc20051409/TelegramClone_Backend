@@ -2,7 +2,8 @@ package com.leanhduc.telegramclone.service.message.discussion;
 
 import com.leanhduc.telegramclone.dto.message.ChatMessageResponse;
 import com.leanhduc.telegramclone.dto.message.CommentCountUpdateDto;
-import com.leanhduc.telegramclone.event.DiscussionBroadcastEvent;
+import com.leanhduc.telegramclone.event.ChannelPostMirroredEvent;
+import com.leanhduc.telegramclone.event.DiscussionCommentCountUpdatedEvent;
 import com.leanhduc.telegramclone.dto.message.DiscussionMediaContext;
 import com.leanhduc.telegramclone.mapper.MessageMapper;
 import com.leanhduc.telegramclone.model.*;
@@ -83,8 +84,7 @@ public class DiscussionService implements IDiscussionService {
         ChatMessageResponse groupRootResponse = messageMapper.toResponse(
                 groupRootMessage, mediaContext.mediaDtos(), null, null);
 
-        eventPublisher.publishEvent(new DiscussionBroadcastEvent(
-                groupRootResponse, null, null));
+        eventPublisher.publishEvent(new ChannelPostMirroredEvent(groupRootResponse));
 
         return 0;
     }
@@ -120,8 +120,7 @@ public class DiscussionService implements IDiscussionService {
                 updatedCount
         );
 
-        eventPublisher.publishEvent(new DiscussionBroadcastEvent(
-                null, updateDto, channelConvId));
+        eventPublisher.publishEvent(new DiscussionCommentCountUpdatedEvent(channelConvId, updateDto));
     }
 
     private DiscussionThreadLink findThreadLinkByMessage(Message msg) {

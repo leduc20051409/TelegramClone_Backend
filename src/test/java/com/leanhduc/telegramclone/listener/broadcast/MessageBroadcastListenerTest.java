@@ -1,12 +1,16 @@
-package com.leanhduc.telegramclone.listener;
+package com.leanhduc.telegramclone.listener.broadcast;
 
 import com.leanhduc.telegramclone.dto.message.ChatMessageResponse;
 import com.leanhduc.telegramclone.dto.message.ChatReadRequest;
+import com.leanhduc.telegramclone.dto.message.CommentCountUpdateDto;
 import com.leanhduc.telegramclone.dto.websocket.DeleteMessageResponse;
 import com.leanhduc.telegramclone.dto.websocket.WsEnvelope;
+import com.leanhduc.telegramclone.event.ChannelPostMirroredEvent;
+import com.leanhduc.telegramclone.event.DiscussionCommentCountUpdatedEvent;
 import com.leanhduc.telegramclone.event.MessageCreatedEvent;
 import com.leanhduc.telegramclone.event.MessageDeletedEvent;
 import com.leanhduc.telegramclone.event.MessageEditedEvent;
+import com.leanhduc.telegramclone.event.MessagesForwardedEvent;
 import com.leanhduc.telegramclone.event.MessagesReadEvent;
 import com.leanhduc.telegramclone.model.enums.ConversationType;
 import com.leanhduc.telegramclone.service.broadcast.ChatBroadcaster;
@@ -67,6 +71,43 @@ class MessageBroadcastListenerTest {
     }
 
     @Test
+    @DisplayName("Should broadcast NEW_MESSAGE for each target in MessagesForwardedEvent")
+    void handleMessagesForwarded_shouldDelegateToChatBroadcaster() {
+        UUID conv1 = UUID.randomUUID();
+        UUID conv2 = UUID.randomUUID();
+        UUID senderId = UUID.randomUUID();
+
+        ChatMessageResponse resp1 = new ChatMessageResponse(
+                10L, conv1, senderId, "User1", "Forwarded 1",
+                Instant.now(), List.of(), false, null, null, "TEXT", null
+        );
+        ChatMessageResponse resp2 = new ChatMessageResponse(
+                11L, conv2, senderId, "User1", "Forwarded 2",
+                Instant.now(), List.of(), false, null, null, "TEXT", null
+        );
+
+        MessagesForwardedEvent event = new MessagesForwardedEvent(List.of(
+                new MessagesForwardedEvent.TargetBroadcastDto(conv1, ConversationType.GROUP, resp1),
+                new MessagesForwardedEvent.TargetBroadcastDto(conv2, ConversationType.CHANNEL, resp2)
+        ));
+
+        listener.handleMessagesForwarded(event);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<WsEnvelope<ChatMessageResponse>> envelopeCaptor = ArgumentCaptor.forClass(WsEnvelope.class);
+
+        verify(chatBroadcaster, times(1)).broadcast(eq(conv1), eq(ConversationType.GROUP), envelopeCaptor.capture());
+        verify(chatBroadcaster, times(1)).broadcast(eq(conv2), eq(ConversationType.CHANNEL), envelopeCaptor.capture());
+
+        List<WsEnvelope<ChatMessageResponse>> captured = envelopeCaptor.getAllValues();
+        assertEquals(2, captured.size());
+        assertEquals("NEW_MESSAGE", captured.get(0).event());
+        assertEquals("Forwarded 1", captured.get(0).data().message());
+        assertEquals("NEW_MESSAGE", captured.get(1).event());
+        assertEquals("Forwarded 2", captured.get(1).data().message());
+    }
+
+    @Test
     @DisplayName("Should broadcast MESSAGES_READ except reader when MessagesReadEvent is received")
     void handleMessagesRead_shouldDelegateToChatBroadcasterExceptReader() {
         UUID conversationId = UUID.randomUUID();
@@ -110,10 +151,7 @@ class MessageBroadcastListenerTest {
                 Instant.now(), List.of(), true, null, null, "TEXT", null
         );
 
-        MessageEditedEvent event = new MessageEditedEvent(
-                response,
-                ConversationType.GROUP
-        );
+        MessageEditedEvent event = new MessageEditedEvent(response, ConversationType.GROUP);
 
         listener.handleMessageEdited(event);
 
@@ -163,16 +201,50 @@ class MessageBroadcastListenerTest {
     }
 
     @Test
+    @DisplayName("Should broadcast NEW_MESSAGE and COMMENT_COUNT_UPDATED for discussion events")
+    void handleDiscussionEvents_shouldDelegateToChatBroadcaster() {
+        UUID channelId = UUID.randomUUID();
+        UUID groupId = UUID.randomUUID();
+        UUID senderId = UUID.randomUUID();
+
+        ChatMessageResponse groupRoot = new ChatMessageResponse(
+                100L, groupId, senderId, "Channel Post in Group", "Post body",
+                Instant.now(), List.of(), false, null, null, "TEXT", null, List.of(), 0
+        );
+        CommentCountUpdateDto countUpdate = new CommentCountUpdateDto(50L, channelId, 100L, groupId, 5);
+
+        listener.handleChannelPostMirrored(new ChannelPostMirroredEvent(groupRoot));
+        listener.handleDiscussionCommentCountUpdated(new DiscussionCommentCountUpdatedEvent(channelId, countUpdate));
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<WsEnvelope<ChatMessageResponse>> groupCaptor = ArgumentCaptor.forClass(WsEnvelope.class);
+        verify(chatBroadcaster, times(1)).broadcast(eq(groupId), eq(ConversationType.GROUP), groupCaptor.capture());
+        assertEquals("NEW_MESSAGE", groupCaptor.getValue().event());
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<WsEnvelope<CommentCountUpdateDto>> countCaptor = ArgumentCaptor.forClass(WsEnvelope.class);
+        verify(chatBroadcaster, times(1)).broadcast(eq(channelId), eq(ConversationType.CHANNEL), countCaptor.capture());
+        verify(chatBroadcaster, times(1)).broadcast(eq(groupId), eq(ConversationType.GROUP), countCaptor.capture());
+        assertEquals("COMMENT_COUNT_UPDATED", countCaptor.getValue().event());
+    }
+
+    @Test
     @DisplayName("Should do nothing when events are null or contain null data")
     void handleEvents_whenNull_shouldDoNothing() {
         listener.handleMessageCreated(null);
         listener.handleMessageCreated(new MessageCreatedEvent(null, ConversationType.GROUP));
+        listener.handleMessagesForwarded(null);
+        listener.handleMessagesForwarded(new MessagesForwardedEvent(null));
         listener.handleMessagesRead(null);
         listener.handleMessagesRead(new MessagesReadEvent(null, ConversationType.GROUP, null, 1L));
         listener.handleMessageEdited(null);
         listener.handleMessageEdited(new MessageEditedEvent(null, ConversationType.GROUP));
         listener.handleMessageDeleted(null);
         listener.handleMessageDeleted(new MessageDeletedEvent(null, null, ConversationType.GROUP));
+        listener.handleChannelPostMirrored(null);
+        listener.handleChannelPostMirrored(new ChannelPostMirroredEvent(null));
+        listener.handleDiscussionCommentCountUpdated(null);
+        listener.handleDiscussionCommentCountUpdated(new DiscussionCommentCountUpdatedEvent(null, null));
 
         verifyNoInteractions(chatBroadcaster);
     }

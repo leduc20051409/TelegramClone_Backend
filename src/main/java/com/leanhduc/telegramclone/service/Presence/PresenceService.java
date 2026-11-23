@@ -30,7 +30,7 @@ public class PresenceService implements IPresenceService {
         redisTemplate.expire(key, TTL);
 
         if (sizeBefore == null || sizeBefore == 0) {
-            eventPublisher.publishEvent(new UserPresenceChangedEvent(this, userId, true, Instant.now()));
+            eventPublisher.publishEvent(new UserPresenceChangedEvent(userId, true, Instant.now()));
         }
     }
 
@@ -48,7 +48,7 @@ public class PresenceService implements IPresenceService {
         if (size == null || size == 0) {
             Instant lastSeen = Instant.now();
             userRepository.updateLastSeen(userId, lastSeen, Instant.now().minusSeconds(30));
-            eventPublisher.publishEvent(new UserPresenceChangedEvent(this, userId, false, lastSeen));
+            eventPublisher.publishEvent(new UserPresenceChangedEvent(userId, false, lastSeen));
         }
 
     }
