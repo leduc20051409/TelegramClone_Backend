@@ -1,11 +1,17 @@
 name: Telegram Clone CI
+
 on:
   push:
     branches:
       - master
 
+permissions:
+  contents: read
+  checks: read
+
 jobs:
-  build:
+  verify:
+    name: Build, Test & Quality Gate
     runs-on: ubuntu-latest
     steps:
       - name: Checkout source
@@ -16,9 +22,85 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
+          cache: maven
 
-      - name: Build Spring Boot Jar (Skip Test)
-        run: mvn clean package -DskipTests
+      - name: Build and Run Tests
+        run: mvn clean package
+
+      - name: Upload Built JAR
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-jar
+          path: target/*.jar
+          if-no-files-found: error
+
+      - name: Wait for External Checks (SonarCloud Quality Gate)
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const ref = context.sha;
+            const selfJobName = 'Build, Test & Quality Gate';
+            const allowedConclusions = new Set(['success', 'neutral', 'skipped']);
+            const maxAttempts = 18; // up to ~3 minutes
+            const delayMs = 10000;
+
+            for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+              const { data } = await github.rest.checks.listForRef({ owner, repo, ref });
+              const externalChecks = data.check_runs.filter((c) => c.name !== selfJobName);
+
+              const failed = externalChecks.filter(
+                (c) => c.status === 'completed' && !allowedConclusions.has(c.conclusion)
+              );
+              if (failed.length > 0) {
+                const details = failed.map((c) => `${c.name}: ${c.conclusion}`).join('; ');
+                core.setFailed(`Check(s) failed — blocking Docker push: ${details}`);
+                return;
+              }
+
+              const sonarCheck = externalChecks.find((c) => /sonar/i.test(c.name));
+              const pending = externalChecks.filter((c) => c.status !== 'completed');
+
+              if (sonarCheck && sonarCheck.status === 'completed' && pending.length === 0) {
+                core.info(`SonarCloud check passed: ${sonarCheck.name} (${sonarCheck.conclusion})`);
+                return;
+              }
+
+              if (!sonarCheck && attempt >= 6 && pending.length === 0) {
+                core.info('No pending external checks or SonarCloud check found; proceeding.');
+                return;
+              }
+
+              core.info(`Waiting for checks (attempt ${attempt}/${maxAttempts})...`);
+              await new Promise((resolve) => setTimeout(resolve, delayMs));
+            }
+
+            const { data: finalData } = await github.rest.checks.listForRef({ owner, repo, ref });
+            const finalFailed = finalData.check_runs.filter(
+              (c) => c.name !== selfJobName && c.status === 'completed' && !allowedConclusions.has(c.conclusion)
+            );
+            if (finalFailed.length > 0) {
+              core.setFailed(
+                `Check(s) failed: ${finalFailed.map((c) => `${c.name}: ${c.conclusion}`).join('; ')}`
+              );
+            } else {
+              core.setFailed('Timed out waiting for external checks / SonarCloud Quality Gate to complete.');
+            }
+
+  docker-push:
+    name: Build & Push Docker Image
+    needs: verify
+    if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/master' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Download Built JAR
+        uses: actions/download-artifact@v4
+        with:
+          name: app-jar
+          path: target
 
       - name: Login to Docker Hub
         uses: docker/login-action@v3

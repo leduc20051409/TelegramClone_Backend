@@ -23,7 +23,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 import java.io.IOException;
-import java.io.InputStream;
 import java.math.BigDecimal;
 import java.util.Arrays;
 import java.util.List;
@@ -43,8 +42,6 @@ public class MediaService implements IMediaService {
 
     private static final long MAX_FILE_SIZE = 10L * 1024 * 1024;
     private static final long MAX_VIDEO_SIZE = 50L * 1024 * 1024;
-    private static final long STREAMING_UPLOAD_THRESHOLD_BYTES = 5L * 1024 * 1024;
-    private static final int CLOUDINARY_CHUNK_SIZE_BYTES = 6 * 1024 * 1024;
     private static final List<String> ALLOWED_TYPES = Arrays.asList(
             "image/jpeg", "image/png", "image/gif", "image/webp",
             "video/mp4", "video/webm", "video/quicktime",
@@ -96,17 +93,7 @@ public class MediaService implements IMediaService {
                     "resource_type", resourceType,
                     "folder", "telegram-clone/" + userId,
                     "public_id", uniquePublicId);
-            Map<String, Object> result;
-            if (size > STREAMING_UPLOAD_THRESHOLD_BYTES) {
-                try (InputStream inputStream = file.getInputStream()) {
-                    result = cloudinary.uploader().uploadLarge(
-                            inputStream,
-                            uploadOptions,
-                            CLOUDINARY_CHUNK_SIZE_BYTES);
-                }
-            } else {
-                result = cloudinary.uploader().upload(file.getBytes(), uploadOptions);
-            }
+            Map<String, Object> result = cloudinary.uploader().upload(file.getBytes(), uploadOptions);
             String secureUrl = (String) result.get("secure_url");
             String storageKey = (String) result.get("public_id");
             Integer width = toInteger(result.get("width"));

@@ -21,7 +21,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockMultipartFile;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.util.Map;
 import java.util.UUID;
 
@@ -142,7 +141,7 @@ class MediaServiceTest {
         );
 
         when(cloudinary.uploader()).thenReturn(uploader);
-        when(uploader.uploadLarge(any(InputStream.class), anyMap(), eq(6 * 1024 * 1024))).thenReturn(Map.of(
+        when(uploader.upload(any(byte[].class), anyMap())).thenReturn(Map.of(
                 "secure_url", "https://res.cloudinary.com/demo/video/upload/demo.mp4",
                 "public_id", "telegram-clone/" + userId + "/uuid_demo"
         ));
@@ -154,7 +153,7 @@ class MediaServiceTest {
 
         UploadResponseDto dto = mediaService.uploadFile(userId, video);
         assertNotNull(dto.mediaId());
-        verify(uploader).uploadLarge(any(InputStream.class), anyMap(), eq(6 * 1024 * 1024));
+        verify(uploader).upload(any(byte[].class), anyMap());
     }
 
     @Test

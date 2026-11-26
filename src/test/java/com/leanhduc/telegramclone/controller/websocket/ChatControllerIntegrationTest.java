@@ -59,13 +59,21 @@ import static org.mockito.Mockito.when;
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
         properties = {
                 "logging.level.org.springframework.web.socket=DEBUG",
-                "logging.level.org.springframework.messaging.simp.stomp=DEBUG"
+                "logging.level.org.springframework.messaging.simp.stomp=DEBUG",
+                "cloudinary.cloud-name=test-cloud",
+                "cloudinary.api-key=test-key",
+                "cloudinary.api-secret=test-secret",
+                "jwt.secretKey=7046fcf99e782ce425f143d6b1244ae3c6ccb0a1cbf5625b165090952922b80d",
+                "spring.mail.username=test@example.com",
+                "spring.mail.password=test-password"
         }
 )
 @EnableAutoConfiguration (exclude = {
         org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration.class,
         org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration.class,
-        org.springframework.boot.autoconfigure.jdbc.DataSourceTransactionManagerAutoConfiguration.class
+        org.springframework.boot.autoconfigure.jdbc.DataSourceTransactionManagerAutoConfiguration.class,
+        org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration.class,
+        org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration.class
 })
 @Import(ChatControllerIntegrationTest.TestTxConfig.class)
 public class ChatControllerIntegrationTest {
@@ -126,6 +134,33 @@ public class ChatControllerIntegrationTest {
     private RefreshTokenRepository refreshTokenRepository;
 
     @MockitoBean
+    private ConversationInviteLinkRepository conversationInviteLinkRepository;
+
+    @MockitoBean
+    private DiscussionThreadLinkRepository discussionThreadLinkRepository;
+
+    @MockitoBean
+    private MediaRepository mediaRepository;
+
+    @MockitoBean
+    private MessageMediaRepository messageMediaRepository;
+
+    @MockitoBean
+    private MessagePostViewRepository messagePostViewRepository;
+
+    @MockitoBean
+    private MessageReactionRepository messageReactionRepository;
+
+    @MockitoBean
+    private PasswordResetTokenRepository passwordResetTokenRepository;
+
+    @MockitoBean
+    private PinnedMessageRepository pinnedMessageRepository;
+
+    @MockitoBean
+    private UnreadCounterRepository unreadCounterRepository;
+
+    @MockitoBean
     private PresenceService presenceService;
 
     @MockitoBean
@@ -182,6 +217,8 @@ public class ChatControllerIntegrationTest {
                 .thenReturn(Optional.of(member));
         when(conversationMemberRepository.findByConversationIdAndLeftAtIsNull(mockConversationId))
                 .thenReturn(List.of(member));
+        when(conversationMemberRepository.findActiveUserIdsByConversationId(mockConversationId))
+                .thenReturn(List.of(mockUserId));
         when(userRepository.findById(mockUserId)).thenReturn(Optional.of(sender));
         when(userRepository.existsById(mockUserId)).thenReturn(true);
         when(messageRepository.save(any(Message.class))).thenAnswer(invocation -> {
