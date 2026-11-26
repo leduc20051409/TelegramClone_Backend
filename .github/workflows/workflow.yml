@@ -2,13 +2,12 @@ name: Telegram Clone CI
 on:
   push:
     branches:
-      - feature/github-actions
+      - master
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-
       - name: Checkout source
         uses: actions/checkout@v4
 
