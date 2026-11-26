@@ -217,15 +217,16 @@ class MessageBroadcastListenerTest {
         listener.handleDiscussionCommentCountUpdated(new DiscussionCommentCountUpdatedEvent(channelId, countUpdate));
 
         @SuppressWarnings("unchecked")
-        ArgumentCaptor<WsEnvelope<ChatMessageResponse>> groupCaptor = ArgumentCaptor.forClass(WsEnvelope.class);
-        verify(chatBroadcaster, times(1)).broadcast(eq(groupId), eq(ConversationType.GROUP), groupCaptor.capture());
-        assertEquals("NEW_MESSAGE", groupCaptor.getValue().event());
+        ArgumentCaptor<WsEnvelope<?>> groupCaptor = ArgumentCaptor.forClass(WsEnvelope.class);
+        verify(chatBroadcaster, times(2)).broadcast(eq(groupId), eq(ConversationType.GROUP), groupCaptor.capture());
+        List<WsEnvelope<?>> groupEnvelopes = groupCaptor.getAllValues();
+        assertEquals("NEW_MESSAGE", groupEnvelopes.get(0).event());
+        assertEquals("COMMENT_COUNT_UPDATED", groupEnvelopes.get(1).event());
 
         @SuppressWarnings("unchecked")
-        ArgumentCaptor<WsEnvelope<CommentCountUpdateDto>> countCaptor = ArgumentCaptor.forClass(WsEnvelope.class);
-        verify(chatBroadcaster, times(1)).broadcast(eq(channelId), eq(ConversationType.CHANNEL), countCaptor.capture());
-        verify(chatBroadcaster, times(1)).broadcast(eq(groupId), eq(ConversationType.GROUP), countCaptor.capture());
-        assertEquals("COMMENT_COUNT_UPDATED", countCaptor.getValue().event());
+        ArgumentCaptor<WsEnvelope<CommentCountUpdateDto>> channelCaptor = ArgumentCaptor.forClass(WsEnvelope.class);
+        verify(chatBroadcaster, times(1)).broadcast(eq(channelId), eq(ConversationType.CHANNEL), channelCaptor.capture());
+        assertEquals("COMMENT_COUNT_UPDATED", channelCaptor.getValue().event());
     }
 
     @Test

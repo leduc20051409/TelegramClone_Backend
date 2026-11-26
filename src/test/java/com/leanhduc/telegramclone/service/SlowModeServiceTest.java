@@ -372,6 +372,11 @@ class SlowModeServiceTest {
                     .messageType(MessageType.TEXT)
                     .build();
             when(messageRepository.save(any(Message.class))).thenReturn(savedMessage);
+            ChatMessageResponse responseMock = new ChatMessageResponse(
+                    101L, conversationId, senderId, "alice", "Admin broadcast",
+                    Instant.now(), List.of(), false, null, null, "TEXT", null
+            );
+            when(messageMapper.toResponse(any(), any(), any(), any())).thenReturn(responseMock);
 
             ChatMessageResponse response = messageService.saveMessage(senderId,
                     new ChatMessageRequest(conversationId, "Admin broadcast", null, null));
