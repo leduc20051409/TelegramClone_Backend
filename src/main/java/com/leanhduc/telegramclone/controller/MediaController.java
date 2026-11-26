@@ -25,9 +25,10 @@ public class MediaController {
     @Operation(summary = "Upload a file to cloud storage")
     public ResponseEntity<UploadResponseDto> uploadFile(
             Principal principal,
-            @RequestParam("file") MultipartFile file) {
+            @RequestParam("file") MultipartFile file,
+            @RequestParam(value = "asFile", defaultValue = "false") boolean asFile) {
         UUID ownerId = UUID.fromString(principal.getName());
-        UploadResponseDto response = mediaService.uploadFile(ownerId, file);
+        UploadResponseDto response = mediaService.uploadFile(ownerId, file, asFile);
         return ResponseEntity.ok(response);
     }
 

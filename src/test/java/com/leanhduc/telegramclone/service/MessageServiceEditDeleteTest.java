@@ -2,14 +2,19 @@ package com.leanhduc.telegramclone.service;
 
 import com.leanhduc.telegramclone.dto.message.ChatMessageResponse;
 import com.leanhduc.telegramclone.dto.message.EditMessageRequest;
+import com.leanhduc.telegramclone.event.MediaCloudDeleteEvent;
 import com.leanhduc.telegramclone.event.MessageDeletedEvent;
 import com.leanhduc.telegramclone.event.MessageEditedEvent;
 import com.leanhduc.telegramclone.mapper.MessageMapper;
 import com.leanhduc.telegramclone.model.Conversation;
 import com.leanhduc.telegramclone.model.ConversationMember;
+import com.leanhduc.telegramclone.model.Media;
 import com.leanhduc.telegramclone.model.Message;
+import com.leanhduc.telegramclone.model.MessageMedia;
+import com.leanhduc.telegramclone.model.MessageMediaId;
 import com.leanhduc.telegramclone.model.User;
 import com.leanhduc.telegramclone.model.enums.ConversationType;
+import com.leanhduc.telegramclone.model.enums.MediaStatus;
 import com.leanhduc.telegramclone.model.enums.MessageType;
 import com.leanhduc.telegramclone.repository.*;
 import com.leanhduc.telegramclone.service.conversation.IPermissionService;
@@ -167,5 +172,72 @@ class MessageServiceEditDeleteTest {
         assertEquals(conversation.getId(), result);
         verify(messageRepository, never()).save(any());
         verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    @Test
+    @DisplayName("Should delete orphaned video from DB and publish MediaCloudDeleteEvent when deleting message")
+    void deleteMessage_withOrphanedVideo_shouldPublishCloudDeleteEvent() {
+        UUID mediaId = UUID.randomUUID();
+        Media video = Media.builder()
+                .id(mediaId)
+                .storageKey("telegram-clone/user/uuid_clip")
+                .resourceType("video")
+                .mimeType("video/mp4")
+                .build();
+        MessageMedia mm = MessageMedia.builder()
+                .id(new MessageMediaId(messageId, mediaId))
+                .message(message)
+                .media(video)
+                .ordinal(0)
+                .build();
+
+        when(messageRepository.findById(messageId)).thenReturn(Optional.of(message));
+        when(messageMediaRepository.findByMessageIdInWithMedia(List.of(messageId))).thenReturn(List.of(mm));
+        when(messageMediaRepository.existsByMediaId(mediaId)).thenReturn(false);
+        when(userRepository.existsByAvatarMediaId(mediaId)).thenReturn(false);
+        when(conversationRepository.existsByAvatarMediaId(mediaId)).thenReturn(false);
+        when(messageRepository.save(any(Message.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        messageService.deleteMessage(currentUserId, messageId);
+
+        assertEquals(MediaStatus.PENDING_DELETE, video.getStatus());
+        verify(messageMediaRepository).deleteByMessageId(messageId);
+        verify(mediaRepository).saveAll(List.of(video));
+        verify(mediaRepository, never()).deleteAll(any());
+        verify(eventPublisher).publishEvent(argThat((Object evt) ->
+                evt instanceof MediaCloudDeleteEvent cloudEvt
+                        && cloudEvt.targets().size() == 1
+                        && cloudEvt.targets().get(0).storageKey().equals("telegram-clone/user/uuid_clip")
+                        && cloudEvt.targets().get(0).resourceType().equals("video")));
+    }
+
+    @Test
+    @DisplayName("Should keep shared/forwarded video on Cloudinary when another MessageMedia still references it")
+    void deleteMessage_withForwardedVideo_shouldNotDeleteCloudAsset() {
+        UUID mediaId = UUID.randomUUID();
+        Media video = Media.builder()
+                .id(mediaId)
+                .storageKey("telegram-clone/user/shared_clip")
+                .resourceType("video")
+                .mimeType("video/mp4")
+                .build();
+        MessageMedia mm = MessageMedia.builder()
+                .id(new MessageMediaId(messageId, mediaId))
+                .message(message)
+                .media(video)
+                .ordinal(0)
+                .build();
+
+        when(messageRepository.findById(messageId)).thenReturn(Optional.of(message));
+        when(messageMediaRepository.findByMessageIdInWithMedia(List.of(messageId))).thenReturn(List.of(mm));
+        when(messageMediaRepository.existsByMediaId(mediaId)).thenReturn(true);
+        when(messageRepository.save(any(Message.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        messageService.deleteMessage(currentUserId, messageId);
+
+        verify(messageMediaRepository).deleteByMessageId(messageId);
+        verify(mediaRepository, never()).saveAll(any());
+        verify(mediaRepository, never()).deleteAll(any());
+        verify(eventPublisher, never()).publishEvent(any(MediaCloudDeleteEvent.class));
     }
 }

@@ -24,6 +24,8 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 import java.io.IOException;
 import java.math.BigDecimal;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -40,20 +42,27 @@ public class MediaService implements IMediaService {
     private final ConversationMemberRepository conversationMemberRepository;
     private final IPermissionService permissionService;
 
-    private static final long MAX_SIZE = 10 * 1024 * 1024;
+    private static final long MAX_FILE_SIZE = 10L * 1024 * 1024;
+    private static final long MAX_VIDEO_SIZE = 50L * 1024 * 1024;
     private static final List<String> ALLOWED_TYPES = Arrays.asList(
             "image/jpeg", "image/png", "image/gif", "image/webp",
-            "video/mp4", "video/webm",
+            "video/mp4", "video/webm", "video/quicktime",
             "application/pdf", "application/msword",
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
     private static final List<String> ALLOWED_EXTENSIONS = Arrays.asList(
             "jpg", "jpeg", "png", "gif", "webp",
-            "mp4", "webm",
+            "mp4", "webm", "mov",
             "pdf", "doc", "docx");
 
     @Override
     @LogExecutionTime(thresholdMs = 1000, description = "Cloudinary file upload")
     public UploadResponseDto uploadFile(UUID userId, MultipartFile file) {
+        return uploadFile(userId, file, false);
+    }
+
+    @Override
+    @LogExecutionTime(thresholdMs = 1000, description = "Cloudinary file upload")
+    public UploadResponseDto uploadFile(UUID userId, MultipartFile file, boolean asFile) {
         if (file == null || file.isEmpty()) {
             throw new BusinessException(ErrorCode.INVALID_FILE);
         }
@@ -61,14 +70,15 @@ public class MediaService implements IMediaService {
         String contentType = file.getContentType();
         long size = file.getSize();
 
-        log.info("User {} uploading file: {}", userId, originalFilename);
-
-        if (size > MAX_SIZE) {
-            throw new BusinessException(ErrorCode.FILE_SIZE_EXCEEDED);
-        }
+        log.info("User {} uploading file: {} (asFile={})", userId, originalFilename, asFile);
 
         if (contentType == null || !ALLOWED_TYPES.contains(contentType)) {
             throw new BusinessException(ErrorCode.UNSUPPORTED_FILE_TYPE);
+        }
+
+        long maxAllowedSize = contentType.startsWith("video/") ? MAX_VIDEO_SIZE : MAX_FILE_SIZE;
+        if (size > maxAllowedSize) {
+            throw new BusinessException(ErrorCode.FILE_SIZE_EXCEEDED);
         }
 
         String extension = StringUtils.getFilenameExtension(originalFilename);
@@ -76,14 +86,20 @@ public class MediaService implements IMediaService {
             throw new BusinessException(ErrorCode.INVALID_FILE_EXTENSION);
         }
 
+        String normalizedExtension = extension.toLowerCase();
+        String resourceType = asFile ? "raw" : getResourceType(contentType);
+        String uniquePublicId = buildUniquePublicId(originalFilename, resourceType, normalizedExtension);
+
+        Path tempFile = null;
         try {
-            String resourceType = getResourceType(contentType);
+            tempFile = Files.createTempFile("tg-upload-", "." + normalizedExtension);
+            file.transferTo(tempFile);
             Map<String, Object> result = cloudinary.uploader().upload(
-                    file.getBytes(),
+                    tempFile.toFile(),
                     ObjectUtils.asMap(
                             "resource_type", resourceType,
                             "folder", "telegram-clone/" + userId,
-                            "public_id", originalFilename.replaceAll("\\.[^.]+$", "")));
+                            "public_id", uniquePublicId));
             String secureUrl = (String) result.get("secure_url");
             String storageKey = (String) result.get("public_id");
             Integer width = toInteger(result.get("width"));
@@ -113,6 +129,14 @@ public class MediaService implements IMediaService {
         } catch (IOException e) {
             log.error("Failed to upload file to Cloudinary for user: {}", userId, e);
             throw new BusinessException(ErrorCode.FILE_UPLOAD_FAILED);
+        } finally {
+            if (tempFile != null) {
+                try {
+                    Files.deleteIfExists(tempFile);
+                } catch (IOException cleanupEx) {
+                    log.warn("Failed to delete temporary upload file {}: {}", tempFile, cleanupEx.getMessage());
+                }
+            }
         }
     }
 
@@ -124,7 +148,7 @@ public class MediaService implements IMediaService {
         String contentType = file.getContentType();
         long size = file.getSize();
 
-        if (size > MAX_SIZE) {
+        if (size > MAX_FILE_SIZE) {
             throw new BusinessException(ErrorCode.FILE_SIZE_EXCEEDED);
         }
         if (contentType == null || !contentType.startsWith("image/")) {
@@ -192,14 +216,53 @@ public class MediaService implements IMediaService {
         if (!userId.equals(media.getOwnerId()) || media.getStatus() != MediaStatus.TEMP) {
             throw new BusinessException(ErrorCode.MEDIA_NOT_ACCESSIBLE);
         }
-        try {
-            cloudinary.uploader().destroy(media.getStorageKey(),
-                    ObjectUtils.asMap("resource_type", media.getResourceType()));
-        } catch (IOException e) {
-            log.error("Failed to delete media from Cloudinary: {}", mediaId, e);
+        if (!destroyOnCloudinary(media.getStorageKey(), media.getResourceType())) {
             throw new BusinessException(ErrorCode.DELETE_MEDIA_FAILED);
         }
         mediaRepository.delete(media);
+    }
+
+    @Override
+    public boolean destroyOnCloudinary(String storageKey, String resourceType) {
+        if (storageKey == null || storageKey.isBlank()) {
+            return true;
+        }
+        String effectiveResourceType = (resourceType == null || resourceType.isBlank()) ? "raw" : resourceType;
+        try {
+            Map<?, ?> result = cloudinary.uploader().destroy(
+                    storageKey,
+                    ObjectUtils.asMap("resource_type", effectiveResourceType, "invalidate", true));
+            Object resultValue = result != null ? result.get("result") : null;
+            String status = resultValue != null ? resultValue.toString() : "";
+            if ("ok".equalsIgnoreCase(status) || "not found".equalsIgnoreCase(status)) {
+                return true;
+            }
+            log.warn("Unexpected Cloudinary destroy result '{}' for storageKey={} (resourceType={})",
+                    status, storageKey, effectiveResourceType);
+            return false;
+        } catch (IOException | RuntimeException e) {
+            log.error("Failed to delete media from Cloudinary: storageKey={} (resourceType={})",
+                    storageKey, effectiveResourceType, e);
+            return false;
+        }
+    }
+
+    private String buildUniquePublicId(String originalFilename, String resourceType, String extension) {
+        String rawBaseName = originalFilename != null
+                ? originalFilename.replaceAll("\\.[^.]+$", "")
+                : "file";
+        String sanitizedBaseName = rawBaseName.replaceAll("[^a-zA-Z0-9_-]", "_");
+        if (sanitizedBaseName.isBlank()) {
+            sanitizedBaseName = "file";
+        }
+        if (sanitizedBaseName.length() > 60) {
+            sanitizedBaseName = sanitizedBaseName.substring(0, 60);
+        }
+        String basePublicId = UUID.randomUUID() + "_" + sanitizedBaseName;
+        if ("raw".equals(resourceType) && extension != null && !extension.isBlank()) {
+            return basePublicId + "." + extension;
+        }
+        return basePublicId;
     }
 
     private AvatarTarget resolveAvatarTarget(UUID ownerId, String targetType, String targetId) {

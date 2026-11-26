@@ -23,6 +23,8 @@ public interface ConversationRepository extends JpaRepository<Conversation, UUID
 
     boolean existsByUsername(String username);
 
+    boolean existsByAvatarMediaId(UUID avatarMediaId);
+
     @Query("SELECT c FROM Conversation c " +
             "WHERE c.isPublic = true " +
             "AND (LOWER(c.title) LIKE LOWER(CONCAT('%', :query, '%')) " +

@@ -10,6 +10,7 @@ import com.leanhduc.telegramclone.dto.message.DiscussionThreadResponse;
 import com.leanhduc.telegramclone.dto.message.EditMessageRequest;
 import com.leanhduc.telegramclone.dto.message.ForwardMessageRequest;
 import com.leanhduc.telegramclone.dto.message.SyncMessagesResponse;
+import com.leanhduc.telegramclone.event.MediaCloudDeleteEvent;
 import com.leanhduc.telegramclone.event.MessageCreatedEvent;
 import com.leanhduc.telegramclone.event.MessageDeletedEvent;
 import com.leanhduc.telegramclone.event.MessageEditedEvent;
@@ -132,8 +133,8 @@ public class MessageService implements IMessageService {
                     .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
 
             List<UUID> mediaIds = request.mediaIds() == null ? List.of() : request.mediaIds();
-            MessageType messageType = mediaIds.isEmpty() ? MessageType.TEXT : MessageType.FILE;
             Map<UUID, Media> mediaById = Collections.emptyMap();
+            List<Media> orderedMedia = List.of();
             if (!mediaIds.isEmpty()) {
                 if (!permissionService.hasMemberPermission(member, MemberPermission.SEND_MEDIA)) {
                     throw new BusinessException(ErrorCode.PERMISSION_DENIED);
@@ -147,7 +148,9 @@ public class MessageService implements IMessageService {
                     throw new BusinessException(ErrorCode.MEDIA_NOT_ACCESSIBLE);
                 }
                 mediaById = mediaList.stream().collect(Collectors.toMap(Media::getId, media -> media));
+                orderedMedia = mediaIds.stream().map(mediaById::get).filter(Objects::nonNull).toList();
             }
+            MessageType messageType = resolveMessageType(orderedMedia);
 
             Message replyTo = null;
             if (request.replyToMessageId() != null) {
@@ -350,13 +353,48 @@ public class MessageService implements IMessageService {
         return result;
     }
 
+    private MessageType resolveMessageType(List<Media> mediaList) {
+        if (mediaList == null || mediaList.isEmpty()) {
+            return MessageType.TEXT;
+        }
+        boolean allVideo = mediaList.stream().allMatch(this::isVideoMedia);
+        if (allVideo) {
+            return MessageType.VIDEO;
+        }
+        boolean allImage = mediaList.stream().allMatch(this::isImageMedia);
+        if (allImage) {
+            return MessageType.IMAGE;
+        }
+        return MessageType.FILE;
+    }
+
+    private boolean isVideoMedia(Media media) {
+        if (media == null || "raw".equalsIgnoreCase(media.getResourceType())) {
+            return false;
+        }
+        return "video".equalsIgnoreCase(media.getResourceType())
+                || (media.getMimeType() != null && media.getMimeType().startsWith("video/"));
+    }
+
+    private boolean isImageMedia(Media media) {
+        if (media == null || "raw".equalsIgnoreCase(media.getResourceType())) {
+            return false;
+        }
+        return "image".equalsIgnoreCase(media.getResourceType())
+                || (media.getMimeType() != null && media.getMimeType().startsWith("image/"));
+    }
+
     private MediaAttachmentDto toMediaDto(Media media) {
         return new MediaAttachmentDto(
                 media.getId(),
                 media.getUrl(),
                 media.getMimeType(),
                 media.getFileName(),
-                media.getFileSize() == null ? 0L : media.getFileSize()
+                media.getFileSize() == null ? 0L : media.getFileSize(),
+                media.getResourceType(),
+                media.getWidth(),
+                media.getHeight(),
+                media.getDurationSeconds()
         );
     }
 
@@ -405,7 +443,15 @@ public class MessageService implements IMessageService {
         message.setUpdatedAt(java.time.Instant.now());
 
         List<UUID> mediaIds = request.mediaIds();
+        List<Media> removedMediaCandidates = List.of();
         if (mediaIds != null) {
+            List<MessageMedia> existingMessageMedia = messageMediaRepository.findByMessageIdInWithMedia(List.of(messageId));
+            Set<UUID> newMediaIdSet = new HashSet<>(mediaIds);
+            removedMediaCandidates = existingMessageMedia.stream()
+                    .map(MessageMedia::getMedia)
+                    .filter(media -> !newMediaIdSet.contains(media.getId()))
+                    .toList();
+
             messageMediaRepository.deleteByMessageId(messageId);
 
             if (!mediaIds.isEmpty()) {
@@ -421,6 +467,7 @@ public class MessageService implements IMessageService {
                         .collect(Collectors.toMap(Media::getId, media -> media));
 
                 List<MessageMedia> messageMediaList = new ArrayList<>();
+                List<Media> orderedNewMedia = new ArrayList<>(mediaIds.size());
                 for (int i = 0; i < mediaIds.size(); i++) {
                     UUID mediaId = mediaIds.get(i);
                     Media media = mediaById.get(mediaId);
@@ -435,13 +482,18 @@ public class MessageService implements IMessageService {
                             .ordinal(i)
                             .build();
                     messageMediaList.add(messageMedia);
+                    orderedNewMedia.add(media);
                 }
                 messageMediaRepository.saveAll(messageMediaList);
                 mediaRepository.saveAll(mediaList);
+                message.setMessageType(resolveMessageType(orderedNewMedia));
+            } else {
+                message.setMessageType(MessageType.TEXT);
             }
         }
 
         message = messageRepository.save(message);
+        cleanupOrphanedMedia(removedMediaCandidates);
 
         List<MessageMedia> messageMediaList = messageMediaRepository.findByMessageIdInWithMedia(List.of(messageId));
         List<MediaAttachmentDto> mediaDtos = messageMediaList.stream()
@@ -484,8 +536,17 @@ public class MessageService implements IMessageService {
             }
         }
 
+        List<MessageMedia> attachedMessageMedia = messageMediaRepository.findByMessageIdInWithMedia(List.of(messageId));
+        List<Media> detachedMedia = attachedMessageMedia.stream()
+                .map(MessageMedia::getMedia)
+                .toList();
+        if (!detachedMedia.isEmpty()) {
+            messageMediaRepository.deleteByMessageId(messageId);
+        }
+
         message.setDeleted(true);
         messageRepository.save(message);
+        cleanupOrphanedMedia(detachedMedia);
 
         UUID conversationId = message.getConversation().getId();
         ConversationType conversationType = message.getConversation().getType();
@@ -497,6 +558,44 @@ public class MessageService implements IMessageService {
         ));
 
         return conversationId;
+    }
+
+    private void cleanupOrphanedMedia(Collection<Media> candidates) {
+        if (candidates == null || candidates.isEmpty()) {
+            return;
+        }
+        Map<UUID, Media> uniqueById = new LinkedHashMap<>();
+        for (Media media : candidates) {
+            if (media != null && media.getId() != null) {
+                uniqueById.putIfAbsent(media.getId(), media);
+            }
+        }
+        if (uniqueById.isEmpty()) {
+            return;
+        }
+
+        List<Media> orphanedMedia = new ArrayList<>();
+        List<MediaCloudDeleteEvent.MediaCloudTarget> cloudTargets = new ArrayList<>();
+        for (Media media : uniqueById.values()) {
+            UUID mediaId = media.getId();
+            boolean stillReferenced = messageMediaRepository.existsByMediaId(mediaId)
+                    || userRepository.existsByAvatarMediaId(mediaId)
+                    || conversationRepository.existsByAvatarMediaId(mediaId);
+            if (!stillReferenced) {
+                orphanedMedia.add(media);
+                cloudTargets.add(new MediaCloudDeleteEvent.MediaCloudTarget(
+                        mediaId,
+                        media.getStorageKey(),
+                        media.getResourceType()
+                ));
+            }
+        }
+
+        if (!orphanedMedia.isEmpty()) {
+            orphanedMedia.forEach(media -> media.setStatus(MediaStatus.PENDING_DELETE));
+            mediaRepository.saveAll(orphanedMedia);
+            eventPublisher.publishEvent(new MediaCloudDeleteEvent(cloudTargets));
+        }
     }
 
     @Override
@@ -579,7 +678,15 @@ public class MessageService implements IMessageService {
 
         List<MessageMedia> messageMediaList = messageMediaRepository.findByMessageIdInWithMedia(List.of(messageId));
         if (!messageMediaList.isEmpty()) {
-            String prefix = messageMediaList.get(0).getMedia().getMimeType().startsWith("image/") ? "Photo" : "File";
+            Media firstMedia = messageMediaList.get(0).getMedia();
+            String prefix;
+            if (isImageMedia(firstMedia)) {
+                prefix = "Photo";
+            } else if (isVideoMedia(firstMedia)) {
+                prefix = "Video";
+            } else {
+                prefix = "File";
+            }
             if (!previewText.isEmpty()) {
                 previewText = prefix + ", " + previewText;
             } else {

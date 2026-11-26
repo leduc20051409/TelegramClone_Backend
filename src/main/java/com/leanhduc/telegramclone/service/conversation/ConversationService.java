@@ -12,6 +12,7 @@ import com.leanhduc.telegramclone.model.*;
 import com.leanhduc.telegramclone.model.enums.AdminPermission;
 import com.leanhduc.telegramclone.model.enums.ConversationRole;
 import com.leanhduc.telegramclone.model.enums.ConversationType;
+import com.leanhduc.telegramclone.model.enums.MediaStatus;
 import com.leanhduc.telegramclone.model.enums.MemberPermission;
 import com.leanhduc.telegramclone.repository.*;
 import com.leanhduc.telegramclone.dto.invite.CreateInviteLinkRequest;
@@ -20,6 +21,7 @@ import com.leanhduc.telegramclone.service.invite.IConversationInviteLinkService;
 import com.leanhduc.telegramclone.dto.websocket.MemberEventResponse;
 import com.leanhduc.telegramclone.event.ConversationMemberChangedEvent;
 import com.leanhduc.telegramclone.event.ConversationUpdatedEvent;
+import com.leanhduc.telegramclone.event.MediaCloudDeleteEvent;
 import com.leanhduc.telegramclone.model.enums.MessageType;
 import com.leanhduc.telegramclone.model.enums.WsEventType;
 import org.springframework.context.ApplicationEventPublisher;
@@ -478,6 +480,14 @@ public class ConversationService implements IConversationService {
             throw new BusinessException(ErrorCode.UNAUTHORIZED_MESSAGE_ACTION);
         }
 
+        // Collect media referenced by this conversation before deleting links
+        List<Media> candidateMedia = new ArrayList<>(
+                messageMediaRepository.findDistinctMediaByConversationId(conversationId)
+        );
+        if (conversation.getAvatarMediaId() != null) {
+            mediaRepository.findById(conversation.getAvatarMediaId()).ifPresent(candidateMedia::add);
+        }
+
         // Delete dependent records
         conversationRepository.deletePinnedMessagesByConversationId(conversationId);
         conversationRepository.deleteUnreadCountersByConversationId(conversationId);
@@ -489,6 +499,42 @@ public class ConversationService implements IConversationService {
 
         // Delete conversation itself
         conversationRepository.deleteById(conversationId);
+        conversationRepository.flush();
+
+        cleanupOrphanedMedia(candidateMedia);
+    }
+
+    private void cleanupOrphanedMedia(Collection<Media> candidates) {
+        if (candidates == null || candidates.isEmpty()) {
+            return;
+        }
+        Map<UUID, Media> uniqueById = new LinkedHashMap<>();
+        for (Media media : candidates) {
+            if (media != null && media.getId() != null) {
+                uniqueById.putIfAbsent(media.getId(), media);
+            }
+        }
+        List<Media> orphanedMedia = new ArrayList<>();
+        List<MediaCloudDeleteEvent.MediaCloudTarget> cloudTargets = new ArrayList<>();
+        for (Media media : uniqueById.values()) {
+            UUID mediaId = media.getId();
+            boolean stillReferenced = messageMediaRepository.existsByMediaId(mediaId)
+                    || userRepository.existsByAvatarMediaId(mediaId)
+                    || conversationRepository.existsByAvatarMediaId(mediaId);
+            if (!stillReferenced) {
+                orphanedMedia.add(media);
+                cloudTargets.add(new MediaCloudDeleteEvent.MediaCloudTarget(
+                        mediaId,
+                        media.getStorageKey(),
+                        media.getResourceType()
+                ));
+            }
+        }
+        if (!orphanedMedia.isEmpty()) {
+            orphanedMedia.forEach(media -> media.setStatus(MediaStatus.PENDING_DELETE));
+            mediaRepository.saveAll(orphanedMedia);
+            eventPublisher.publishEvent(new MediaCloudDeleteEvent(cloudTargets));
+        }
     }
 
     @Override
@@ -755,7 +801,11 @@ public class ConversationService implements IConversationService {
                             m.getUrl(),
                             m.getMimeType(),
                             m.getFileName(),
-                            m.getFileSize() == null ? 0L : m.getFileSize()
+                            m.getFileSize() == null ? 0L : m.getFileSize(),
+                            m.getResourceType(),
+                            m.getWidth(),
+                            m.getHeight(),
+                            m.getDurationSeconds()
                     ))
                     .toList();
             Long viewCount = isChannel ? viewCountByMessageId.getOrDefault(message.getId(), 0L) : null;

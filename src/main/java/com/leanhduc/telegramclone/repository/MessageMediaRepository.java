@@ -1,5 +1,6 @@
 package com.leanhduc.telegramclone.repository;
 
+import com.leanhduc.telegramclone.model.Media;
 import com.leanhduc.telegramclone.model.MessageMedia;
 import com.leanhduc.telegramclone.model.MessageMediaId;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -8,6 +9,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.util.UUID;
 
 @Repository
 public interface MessageMediaRepository extends JpaRepository<MessageMedia, MessageMediaId> {
@@ -18,7 +20,12 @@ public interface MessageMediaRepository extends JpaRepository<MessageMedia, Mess
             "ORDER BY mm.message.id, mm.ordinal")
     List<MessageMedia> findByMessageIdInWithMedia(@Param("messageIds") List<Long> messageIds);
 
-    @org.springframework.data.jpa.repository.Modifying
+    @org.springframework.data.jpa.repository.Modifying(flushAutomatically = true)
     @Query("DELETE FROM MessageMedia mm WHERE mm.message.id = :messageId")
     void deleteByMessageId(@Param("messageId") Long messageId);
+
+    boolean existsByMediaId(UUID mediaId);
+
+    @Query("SELECT DISTINCT mm.media FROM MessageMedia mm WHERE mm.message.conversation.id = :conversationId")
+    List<Media> findDistinctMediaByConversationId(@Param("conversationId") UUID conversationId);
 }

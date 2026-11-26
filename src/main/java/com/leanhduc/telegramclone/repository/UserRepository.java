@@ -18,6 +18,7 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     Optional<User> findByUsername(String username);
     boolean existsByEmail(String email);
     boolean existsByUsername(String username);
+    boolean existsByAvatarMediaId(UUID avatarMediaId);
 
     @Query("SELECT u FROM User u WHERE " +
             "(LOWER(u.username) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
