@@ -23,9 +23,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 import java.io.IOException;
+import java.io.InputStream;
 import java.math.BigDecimal;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -44,6 +43,8 @@ public class MediaService implements IMediaService {
 
     private static final long MAX_FILE_SIZE = 10L * 1024 * 1024;
     private static final long MAX_VIDEO_SIZE = 50L * 1024 * 1024;
+    private static final long STREAMING_UPLOAD_THRESHOLD_BYTES = 5L * 1024 * 1024;
+    private static final int CLOUDINARY_CHUNK_SIZE_BYTES = 6 * 1024 * 1024;
     private static final List<String> ALLOWED_TYPES = Arrays.asList(
             "image/jpeg", "image/png", "image/gif", "image/webp",
             "video/mp4", "video/webm", "video/quicktime",
@@ -90,16 +91,22 @@ public class MediaService implements IMediaService {
         String resourceType = asFile ? "raw" : getResourceType(contentType);
         String uniquePublicId = buildUniquePublicId(originalFilename, resourceType, normalizedExtension);
 
-        Path tempFile = null;
         try {
-            tempFile = Files.createTempFile("tg-upload-", "." + normalizedExtension);
-            file.transferTo(tempFile);
-            Map<String, Object> result = cloudinary.uploader().upload(
-                    tempFile.toFile(),
-                    ObjectUtils.asMap(
-                            "resource_type", resourceType,
-                            "folder", "telegram-clone/" + userId,
-                            "public_id", uniquePublicId));
+            Map<String, Object> uploadOptions = ObjectUtils.asMap(
+                    "resource_type", resourceType,
+                    "folder", "telegram-clone/" + userId,
+                    "public_id", uniquePublicId);
+            Map<String, Object> result;
+            if (size > STREAMING_UPLOAD_THRESHOLD_BYTES) {
+                try (InputStream inputStream = file.getInputStream()) {
+                    result = cloudinary.uploader().uploadLarge(
+                            inputStream,
+                            uploadOptions,
+                            CLOUDINARY_CHUNK_SIZE_BYTES);
+                }
+            } else {
+                result = cloudinary.uploader().upload(file.getBytes(), uploadOptions);
+            }
             String secureUrl = (String) result.get("secure_url");
             String storageKey = (String) result.get("public_id");
             Integer width = toInteger(result.get("width"));
@@ -129,14 +136,6 @@ public class MediaService implements IMediaService {
         } catch (IOException e) {
             log.error("Failed to upload file to Cloudinary for user: {}", userId, e);
             throw new BusinessException(ErrorCode.FILE_UPLOAD_FAILED);
-        } finally {
-            if (tempFile != null) {
-                try {
-                    Files.deleteIfExists(tempFile);
-                } catch (IOException cleanupEx) {
-                    log.warn("Failed to delete temporary upload file {}: {}", tempFile, cleanupEx.getMessage());
-                }
-            }
         }
     }
 

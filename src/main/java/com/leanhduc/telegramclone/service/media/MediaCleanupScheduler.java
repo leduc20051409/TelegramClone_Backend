@@ -12,6 +12,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 
 /**
@@ -37,7 +38,7 @@ public class MediaCleanupScheduler {
      */
     @Scheduled(cron = "0 0 * * * *")
     public void cleanupStaleTemporaryMedia() {
-        OffsetDateTime threshold = OffsetDateTime.now().minusHours(STALE_TEMP_HOURS);
+        OffsetDateTime threshold = OffsetDateTime.now(ZoneOffset.UTC).minusHours(STALE_TEMP_HOURS);
         int deletedTempCount = cleanupCandidates(
                 mediaRepository.findByStatusAndUploadedAtBefore(MediaStatus.TEMP, threshold),
                 "stale TEMP"

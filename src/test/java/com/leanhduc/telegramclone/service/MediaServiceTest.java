@@ -20,8 +20,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockMultipartFile;
 
-import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.util.Map;
 import java.util.UUID;
 
@@ -60,7 +60,7 @@ class MediaServiceTest {
         );
 
         when(cloudinary.uploader()).thenReturn(uploader);
-        when(uploader.upload(any(File.class), anyMap())).thenReturn(Map.of(
+        when(uploader.upload(any(byte[].class), anyMap())).thenReturn(Map.of(
                 "secure_url", "https://res.cloudinary.com/demo/video/upload/clip.mov",
                 "public_id", "telegram-clone/" + userId + "/uuid_clip",
                 "width", 1920,
@@ -79,7 +79,7 @@ class MediaServiceTest {
         assertEquals("video/quicktime", dto.fileType());
 
         ArgumentCaptor<Map<String, Object>> optionsCaptor = ArgumentCaptor.forClass(Map.class);
-        verify(uploader).upload(any(File.class), optionsCaptor.capture());
+        verify(uploader).upload(any(byte[].class), optionsCaptor.capture());
         Map<String, Object> options = optionsCaptor.getValue();
         assertEquals("video", options.get("resource_type"));
         String publicId = (String) options.get("public_id");
@@ -98,7 +98,7 @@ class MediaServiceTest {
         );
 
         when(cloudinary.uploader()).thenReturn(uploader);
-        when(uploader.upload(any(File.class), anyMap())).thenReturn(Map.of(
+        when(uploader.upload(any(byte[].class), anyMap())).thenReturn(Map.of(
                 "secure_url", "https://res.cloudinary.com/demo/raw/upload/uuid_clip.mp4",
                 "public_id", "telegram-clone/" + userId + "/uuid_clip.mp4"
         ));
@@ -112,7 +112,7 @@ class MediaServiceTest {
 
         assertNotNull(dto.mediaId());
         ArgumentCaptor<Map<String, Object>> optionsCaptor = ArgumentCaptor.forClass(Map.class);
-        verify(uploader).upload(any(File.class), optionsCaptor.capture());
+        verify(uploader).upload(any(byte[].class), optionsCaptor.capture());
         Map<String, Object> options = optionsCaptor.getValue();
         assertEquals("raw", options.get("resource_type"));
         String publicId = (String) options.get("public_id");
@@ -142,7 +142,7 @@ class MediaServiceTest {
         );
 
         when(cloudinary.uploader()).thenReturn(uploader);
-        when(uploader.upload(any(File.class), anyMap())).thenReturn(Map.of(
+        when(uploader.uploadLarge(any(InputStream.class), anyMap(), eq(6 * 1024 * 1024))).thenReturn(Map.of(
                 "secure_url", "https://res.cloudinary.com/demo/video/upload/demo.mp4",
                 "public_id", "telegram-clone/" + userId + "/uuid_demo"
         ));
@@ -154,6 +154,7 @@ class MediaServiceTest {
 
         UploadResponseDto dto = mediaService.uploadFile(userId, video);
         assertNotNull(dto.mediaId());
+        verify(uploader).uploadLarge(any(InputStream.class), anyMap(), eq(6 * 1024 * 1024));
     }
 
     @Test
